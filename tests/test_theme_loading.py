@@ -35,17 +35,19 @@ class ThemeLoadingTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
-    def test_module_file_runs_as_direct_script(self):
-        script = Path(__file__).parents[1] / "src" / "mark2word" / "__init__.py"
-
+    def test_mark2word_help(self):
         result = subprocess.run(
-            [sys.executable, str(script), "--help"],
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.argv=['mark2word', '--help']; from mark2word.cli import main; main()",
+            ],
             capture_output=True,
             check=False,
             text=True,
         )
 
-        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Convert a styled-Markdown dialect", result.stdout)
 
 

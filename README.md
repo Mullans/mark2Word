@@ -1,6 +1,6 @@
 # mark2Word
 
-This is my quick tool to convert markdown files to Word documents.
+A tool to convert Markdown files to Word documents, but with all of the styling thrown in too.
 
 ## Markdown Elements
 
@@ -50,6 +50,23 @@ These keys are applied to their current scope. If they aren't within a target, t
 - `space_before`, `space_after` - gap above/below this element
 - `space_between` - gap between items of the same type in pts (mainly lists)
 - `indent_left`, `indent_first_line`, `indent_hanging` - left/first-line/hanging indent
+- `fill` - table cell background color hex (for `th` / `td`)
+
+List-only keys (under the `list` target):
+
+- `indent_step` - extra left indent added per nesting level (defaults to `indent_hanging`, then `indent_left`)
+- `levels` - per-level overrides keyed by depth (`0`, `1`, `2`, …); each entry accepts any style key (e.g. `color`, `indent_left`)
+
+Nested list indents are applied via paragraph styling so themes and regions can control each nesting level independently. Ordered lists use a custom Word multilevel numbering definition (decimal at every level) so nested items restart at 1 while parent levels continue.
+
+```yaml
+list:
+  indent_left: 14pt
+  indent_hanging: 9pt
+  indent_step: 14pt
+  levels:
+    2: { color: "943634" }
+```
 
 Spacing/indent sizes can be given in points or inches (`10` or `10pt` = 10 points, `10in` = 10 inches).
 

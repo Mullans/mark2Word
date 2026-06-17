@@ -1,0 +1,21 @@
+# Base layer for the showcase theme. showcase-theme.yaml extends this file to
+# demonstrate chained theme inheritance.
+
+font: Calibri
+size: 10
+color: "333333"
+
+text:
+  line: 1.15
+
+body:
+  space_after: 3pt
+
+list:
+  space_between: 2pt
+  indent_left: 12pt
+  indent_hanging: 12pt
+
+heading:
+  bold: true
+  color: "2B579A"

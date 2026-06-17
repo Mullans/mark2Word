@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ import yaml
 from docx.shared import Inches, Pt, RGBColor
 
 from mark2word.errors import FrontmatterError, ThemeError
+from mark2word.list_format import resolve_level_numbering, word_lvl_text
 
 DEFAULTS: dict[str, Any] = {
     "font": "Calibri",
@@ -29,8 +31,11 @@ PROP_KEYS = {
 }
 
 HEADINGS = {f"h{i}" for i in range(1, 7)}
-TEXT_ELEMENTS = {"body", "list", "code"}
+TEXT_ELEMENTS = {"body", "list", "ol", "ul", "code"}
 TABLE_ELEMENTS = {"table", "th", "td"}
+LIST_KINDS = {"list", "ol", "ul"}
+LIST_FORMAT_KEYS = {"format", "num_fmt", "template"}
+LIST_META_KEYS = {"indent_step", "levels"}
 
 PAGE_SIZES = {
     "letter": (Inches(8.5), Inches(11)),
@@ -41,6 +46,29 @@ FRONTMATTER_RE = re.compile(
     r"^\ufeff?---[ \t]*\r?\n(.*?)^---[ \t]*\r?\n?(.*)$",
     re.DOTALL | re.MULTILINE,
 )
+
+
+@dataclass(frozen=True)
+class LevelNumbering:
+    num_fmt: str
+    lvl_text: str
+    left_twips: int
+    hanging_twips: int
+
+
+@dataclass(frozen=True)
+class NumberingConfig:
+    ordered: bool
+    levels: tuple[LevelNumbering, ...]
+
+    def fingerprint(self) -> tuple[Any, ...]:
+        return (
+            self.ordered,
+            tuple(
+                (level.num_fmt, level.lvl_text, level.left_twips, level.hanging_twips)
+                for level in self.levels
+            ),
+        )
 
 
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -158,6 +186,46 @@ def load_theme(
     return external, front
 
 
+def ensure_theme_chain_readable(
+    front: dict[str, Any],
+    md_path: Path,
+    theme_dirs=None,
+) -> None:
+    """Verify frontmatter ``extends`` theme files exist and are readable."""
+    from mark2word.paths import ensure_input_readable
+
+    ext = front.get("extends")
+    if ext is None:
+        return
+    _ensure_theme_chain_readable(ext, md_path, theme_dirs, set(), ensure_input_readable)
+
+
+def _ensure_theme_chain_readable(
+    ext: str | Path,
+    md_path: Path,
+    theme_dirs,
+    seen: set[Path],
+    check_readable,
+) -> None:
+    checked = [path.resolve() for path in _theme_candidates(Path(ext), md_path, theme_dirs)]
+    ext_path = next((path for path in checked if path.exists()), None)
+    if ext_path is None:
+        searched = ", ".join(str(path) for path in checked)
+        raise ThemeError(
+            f"Error: cannot read theme file {ext}: file not found; searched: {searched}"
+        )
+    if ext_path in seen:
+        raise ThemeError(f"theme inheritance cycle detected at: {ext_path}")
+    seen.add(ext_path)
+    check_readable(ext_path, kind="theme")
+    data = yaml.safe_load(ext_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ThemeError(f"theme file must be a YAML mapping: {ext_path}")
+    parent_ext = data.get("extends")
+    if parent_ext is not None:
+        _ensure_theme_chain_readable(parent_ext, md_path, theme_dirs, seen, check_readable)
+
+
 def _bare(layer: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in layer.items() if k in PROP_KEYS}
 
@@ -165,6 +233,8 @@ def _bare(layer: dict[str, Any]) -> dict[str, Any]:
 def _key_order(element: str) -> list[str]:
     if element in HEADINGS:
         return ["heading", element]
+    if element == "ol" or element == "ul":
+        return ["list", element]
     if element in TEXT_ELEMENTS:
         return ["text", element]
     if element in TABLE_ELEMENTS:
@@ -218,42 +288,92 @@ class Resolver:
                     style.update(_layer_contribution(block, element))
         return style
 
-    def _list_block_from_layers(self, region_path: tuple[str, ...] | None) -> dict[str, Any]:
-        """Merge raw `list` theme blocks (including nesting meta keys)."""
+    def _list_block_from_layers(
+        self,
+        region_path: tuple[str, ...] | None,
+        *,
+        ordered: bool,
+    ) -> dict[str, Any]:
+        """Merge raw list/ol|ul theme blocks (including nesting meta keys)."""
         block: dict[str, Any] = {}
+        keys = ["list", "ol" if ordered else "ul"]
         for layer in self.global_layers:
-            sub = layer.get("list")
-            if isinstance(sub, dict):
-                block = deep_merge(block, sub)
+            for key in keys:
+                sub = layer.get(key)
+                if isinstance(sub, dict):
+                    block = deep_merge(block, sub)
         for depth in range(1, len(region_path or ()) + 1):
             prefix = region_path[:depth]
             for src in self.region_sources:
                 node = self._descend(src, list(prefix))
                 if isinstance(node, dict):
-                    sub = node.get("list")
-                    if isinstance(sub, dict):
-                        block = deep_merge(block, sub)
+                    for key in keys:
+                        sub = node.get(key)
+                        if isinstance(sub, dict):
+                            block = deep_merge(block, sub)
         return block
+
+    @staticmethod
+    def _level_override(block: dict[str, Any], ilvl: int) -> dict[str, Any]:
+        levels = block.get("levels") or {}
+        level_ov = levels.get(ilvl) or levels.get(str(ilvl))
+        return dict(level_ov) if isinstance(level_ov, dict) else {}
+
+    def _level_indents_twips(self, block: dict[str, Any], ilvl: int) -> tuple[int, int]:
+        level_ov = self._level_override(block, ilvl)
+        base = pt_value(block.get("indent_left", 18))
+        step_raw = block.get("indent_step")
+        if step_raw is None:
+            step_raw = block.get("indent_hanging") or block.get("indent_left") or 18
+        step = pt_value(step_raw)
+        hanging_pt = pt_value(
+            level_ov.get("indent_hanging", block.get("indent_hanging", block.get("indent_left", 18)))
+        )
+        if "indent_left" in level_ov:
+            left_pt = pt_value(level_ov["indent_left"])
+        else:
+            left_pt = base + ilvl * step
+        return int(left_pt * 20), int(hanging_pt * 20)
+
+    def resolve_numbering_config(
+        self,
+        region_path: tuple[str, ...] | None,
+        *,
+        ordered: bool,
+    ) -> NumberingConfig:
+        block = self._list_block_from_layers(region_path, ordered=ordered)
+        levels: list[LevelNumbering] = []
+        for ilvl in range(9):
+            level_cfg = self._level_override(block, ilvl)
+            num_fmt, lvl_text = resolve_level_numbering(level_cfg, ordered=ordered, ilvl=ilvl)
+            lvl_text = word_lvl_text(lvl_text, ilvl)
+            left_twips, hanging_twips = self._level_indents_twips(block, ilvl)
+            levels.append(
+                LevelNumbering(
+                    num_fmt=num_fmt,
+                    lvl_text=lvl_text,
+                    left_twips=left_twips,
+                    hanging_twips=hanging_twips,
+                )
+            )
+        return NumberingConfig(ordered=ordered, levels=tuple(levels))
 
     def resolve_list_style(
         self,
         list_level: int,
         region_path: tuple[str, ...] | None = None,
+        *,
+        ordered: bool,
     ) -> dict[str, Any]:
-        """Resolve list styling with per-level indents and optional level overrides."""
-        style = dict(self.resolve("list", region_path))
-        list_block = self._list_block_from_layers(region_path)
-        levels = list_block.get("levels") or {}
-        level_ov = levels.get(list_level) or levels.get(str(list_level))
-        if isinstance(level_ov, dict):
+        """Resolve list paragraph/run styling (not numbering indents)."""
+        kind = "ol" if ordered else "ul"
+        style = dict(self.resolve(kind, region_path))
+        level_ov = self._level_override(
+            self._list_block_from_layers(region_path, ordered=ordered),
+            list_level,
+        )
+        if level_ov:
             style.update({k: v for k, v in level_ov.items() if k in PROP_KEYS})
-
-        if not isinstance(level_ov, dict) or "indent_left" not in level_ov:
-            base = pt_value(style.get("indent_left", 0))
-            step_raw = list_block.get("indent_step")
-            if step_raw is None:
-                step_raw = style.get("indent_hanging") or style.get("indent_left") or 18
-            step = pt_value(step_raw)
-            if style.get("indent_left") is not None or list_block.get("indent_step") is not None or list_level > 0:
-                style["indent_left"] = base + list_level * step
+        for key in ("indent_left", "indent_first_line", "indent_hanging"):
+            style.pop(key, None)
         return style

@@ -3,19 +3,39 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import warnings
 from pathlib import Path
 
 from mark2word.emit import build
 from mark2word.errors import Mark2WordError
 from mark2word.parser import parse_to_ast
-from mark2word.theme import discover_theme_dirs, load_theme, split_frontmatter
+from mark2word.paths import (
+    ensure_input_readable,
+    ensure_output_writable,
+    raise_if_output_write_blocked,
+)
+from mark2word.theme import (
+    discover_theme_dirs,
+    ensure_theme_chain_readable,
+    load_theme,
+    split_frontmatter,
+)
+
+EXIT_SUCCESS = 0
+EXIT_FAILURE = 1
+EXIT_USAGE = 2
+
+
+class UsageError(Mark2WordError):
+    """Invalid CLI invocation (maps to exit code 2)."""
 
 
 def validate_document(md_path: Path, theme_dirs: list[Path]) -> None:
+    ensure_input_readable(md_path, kind="input")
     text = md_path.read_text(encoding="utf-8")
     front, body = split_frontmatter(text)
-    load_theme(front, md_path, theme_dirs=theme_dirs)
+    ensure_theme_chain_readable(front, md_path, theme_dirs=theme_dirs)
     parse_to_ast(body)
 
 
@@ -36,7 +56,7 @@ def resolve_output_path(
         if output is None:
             return md_path.with_suffix(".docx")
         if _is_explicit_output_file(output):
-            raise Mark2WordError(
+            raise UsageError(
                 f"--output must be a directory when converting multiple inputs: {output}"
             )
         output.mkdir(parents=True, exist_ok=True)
@@ -59,25 +79,57 @@ def convert_one(
     check: bool = False,
     verbose: bool = False,
 ) -> None:
-    if check:
-        validate_document(md_path, theme_dirs)
-        print(f"OK {md_path}")
-        return
+    ensure_input_readable(md_path, kind="input")
+    if not check:
+        ensure_output_writable(out_path)
     text = md_path.read_text(encoding="utf-8")
     front, body = split_frontmatter(text)
+    ensure_theme_chain_readable(front, md_path, theme_dirs=theme_dirs)
+    if check:
+        parse_to_ast(body)
+        print(f"OK {md_path}")
+        return
     external, glob = load_theme(front, md_path, theme_dirs=theme_dirs)
-    build(glob, external, body, out_path, verbose=verbose, md_path=md_path)
+    try:
+        build(glob, external, body, out_path, verbose=verbose, md_path=md_path)
+    except (PermissionError, OSError) as exc:
+        raise_if_output_write_blocked(out_path, exc)
 
 
 def _collect_inputs(args: argparse.Namespace) -> list[Path]:
     inputs = list(args.inputs or [])
     inputs.extend(args.positional_inputs or [])
     if not inputs:
-        raise Mark2WordError("at least one input file is required (use -i/--input)")
+        raise UsageError("at least one input file is required (use -i/--input)")
     return inputs
 
 
-def main(argv: list[str] | None = None) -> None:
+def _prepare_jobs(args: argparse.Namespace) -> list[tuple[Path, Path, list[Path]]]:
+    input_files = _collect_inputs(args)
+    multiple = len(input_files) > 1
+    jobs: list[tuple[Path, Path, list[Path]]] = []
+
+    for md_path in input_files:
+        ensure_input_readable(md_path, kind="input")
+        theme_dirs = list(args.theme_dir)
+        if not args.no_auto_theme_dir:
+            for discovered in discover_theme_dirs(md_path):
+                if discovered not in theme_dirs:
+                    theme_dirs.append(discovered)
+        out_path = resolve_output_path(md_path, args.output, multiple_inputs=multiple)
+        text = md_path.read_text(encoding="utf-8")
+        front, _ = split_frontmatter(text)
+        ensure_theme_chain_readable(front, md_path, theme_dirs=theme_dirs)
+        jobs.append((md_path, out_path, theme_dirs))
+
+    if not args.check:
+        for _, out_path, _ in jobs:
+            ensure_output_writable(out_path)
+
+    return jobs
+
+
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Convert a styled-Markdown dialect into a Word document."
     )
@@ -133,28 +185,28 @@ def main(argv: list[str] | None = None) -> None:
         warnings.simplefilter("always")
 
     try:
-        input_files = _collect_inputs(args)
-    except Mark2WordError as exc:
+        jobs = _prepare_jobs(args)
+    except UsageError as exc:
         parser.error(str(exc))
+    except Mark2WordError as exc:
+        print(str(exc), file=sys.stderr)
+        return EXIT_FAILURE
 
-    multiple = len(input_files) > 1
-
-    for md_path in input_files:
-        theme_dirs = list(args.theme_dir)
-        if not args.no_auto_theme_dir:
-            for discovered in discover_theme_dirs(md_path):
-                if discovered not in theme_dirs:
-                    theme_dirs.append(discovered)
+    for md_path, out_path, theme_dirs in jobs:
         try:
-            out_path = resolve_output_path(
-                md_path, args.output, multiple_inputs=multiple
+            convert_one(
+                md_path,
+                out_path,
+                theme_dirs,
+                check=args.check,
+                verbose=args.verbose,
             )
         except Mark2WordError as exc:
-            parser.error(str(exc))
-        convert_one(
-            md_path,
-            out_path,
-            theme_dirs,
-            check=args.check,
-            verbose=args.verbose,
-        )
+            print(str(exc), file=sys.stderr)
+            return EXIT_FAILURE
+
+    return EXIT_SUCCESS
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 
-_DECIMAL_ABSTRACT_ATTR = "_mark2word_decimal_abstract_id"
-_DECIMAL_LEVELS = 9
+from mark2word.theme import LevelNumbering, NumberingConfig
 
-
-def _get_list_abstract_id(doc, style_name: str) -> int:
-    style = doc.styles[style_name]
-    num_id = style._element.pPr.numPr.numId.val
-    numbering = doc.part.numbering_part.numbering_definitions._numbering
-    ct_num = numbering.num_having_numId(num_id)
-    return ct_num.abstractNumId.val
+_ABSTRACT_CACHE_ATTR = "_mark2word_abstract_cache"
+_LEVELS = 9
 
 
 def _next_abstract_num_id(numbering) -> int:
@@ -26,45 +22,55 @@ def _next_abstract_num_id(numbering) -> int:
     return 0
 
 
-def _build_decimal_level(ilvl: int) -> OxmlElement:
+def _build_level_xml(ilvl: int, level: LevelNumbering) -> OxmlElement:
     lvl = OxmlElement("w:lvl")
     lvl.set(qn("w:ilvl"), str(ilvl))
     start = OxmlElement("w:start")
     start.set(qn("w:val"), "1")
     num_fmt = OxmlElement("w:numFmt")
-    num_fmt.set(qn("w:val"), "decimal")
+    num_fmt.set(qn("w:val"), level.num_fmt)
     lvl_text = OxmlElement("w:lvlText")
-    lvl_text.set(qn("w:val"), f"%{ilvl + 1}.")
+    lvl_text.set(qn("w:val"), level.lvl_text)
     lvl_jc = OxmlElement("w:lvlJc")
     lvl_jc.set(qn("w:val"), "left")
+    p_pr = OxmlElement("w:pPr")
+    ind = OxmlElement("w:ind")
+    ind.set(qn("w:left"), str(level.left_twips))
+    ind.set(qn("w:hanging"), str(level.hanging_twips))
+    p_pr.append(ind)
     lvl.append(start)
     lvl.append(num_fmt)
     lvl.append(lvl_text)
     lvl.append(lvl_jc)
+    lvl.append(p_pr)
     return lvl
 
 
-def _build_decimal_multilevel_abstract(abstract_id: int) -> OxmlElement:
-    """Multilevel abstract numbering with decimal format at every level."""
+def _build_multilevel_abstract(abstract_id: int, config: NumberingConfig) -> OxmlElement:
     abstract = OxmlElement("w:abstractNum")
     abstract.set(qn("w:abstractNumId"), str(abstract_id))
     multi = OxmlElement("w:multiLevelType")
     multi.set(qn("w:val"), "multilevel")
     abstract.append(multi)
-    for ilvl in range(_DECIMAL_LEVELS):
-        abstract.append(_build_decimal_level(ilvl))
+    for ilvl in range(_LEVELS):
+        abstract.append(_build_level_xml(ilvl, config.levels[ilvl]))
     return abstract
 
 
-def _ensure_decimal_multilevel_abstract(doc) -> int:
-    cached = getattr(doc, _DECIMAL_ABSTRACT_ATTR, None)
-    if cached is not None:
-        return cached
+def _ensure_abstract(doc, config: NumberingConfig) -> int:
+    cache = getattr(doc, _ABSTRACT_CACHE_ATTR, None)
+    if cache is None:
+        cache = {}
+        setattr(doc, _ABSTRACT_CACHE_ATTR, cache)
+    fingerprint = config.fingerprint()
+    if fingerprint in cache:
+        return cache[fingerprint]
+
     numbering = doc.part.numbering_part.numbering_definitions._numbering
     abstract_id = _next_abstract_num_id(numbering)
-    abstract = _build_decimal_multilevel_abstract(abstract_id)
+    abstract = _build_multilevel_abstract(abstract_id, config)
     numbering.insert(0, abstract)
-    setattr(doc, _DECIMAL_ABSTRACT_ATTR, abstract_id)
+    cache[fingerprint] = abstract_id
     return abstract_id
 
 
@@ -93,12 +99,10 @@ def apply_list_numbering(
     level: int,
     prev: Paragraph | None,
     run_num_id: int | None,
+    numbering_config: NumberingConfig,
 ) -> int:
     """Apply list numbering and return the numId for the current list run."""
-    if ordered:
-        abstract_id = _ensure_decimal_multilevel_abstract(doc)
-    else:
-        abstract_id = _get_list_abstract_id(doc, "List Bullet")
+    abstract_id = _ensure_abstract(doc, numbering_config)
 
     if _same_list_run(prev, ordered=ordered, run_num_id=run_num_id):
         num_id = run_num_id

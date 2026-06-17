@@ -138,6 +138,7 @@ $theme-list-sample:
       0: {color: "#943634"}
       1: {color: 028010}
       2: {color: 1F4E79}
+
 $footer:
   align: center
   font: Calibri

@@ -31,7 +31,9 @@ $my-notes: { size: 14 }
 These keys describe the target to apply the style to.
 
 - `body` - general body/paragraph text
-- `list` - bulleted/numbered lists
+- `ol` - ordered-list-only settings
+- `ul` - unordered-list-only settings
+- `list` - shared list settings for both ordered and unordered lists
 - `text` - either `body` or `list`
 - `h1`-`h6` - `#`-`######`
 - `heading` - any headings items (`h1`-`h6`)
@@ -52,12 +54,20 @@ These keys are applied to their current scope. If they aren't within a target, t
 - `indent_left`, `indent_first_line`, `indent_hanging` - left/first-line/hanging indent
 - `fill` - table cell background color hex (for `th` / `td`)
 
-List-only keys (under the `list` target):
+List keys (under `list`, `ol`, or `ul`):
 
-- `indent_step` - extra left indent added per nesting level (defaults to `indent_hanging`, then `indent_left`)
-- `levels` - per-level overrides keyed by depth (`0`, `1`, `2`, …); each entry accepts any style key (e.g. `color`, `indent_left`)
+- `indent_left`, `indent_hanging`, `indent_step` - list nesting indents (compiled into Word multilevel numbering)
+- `levels` - per-level overrides keyed by depth (`0`, `1`, `2`, …)
 
-Nested list indents are applied via paragraph styling so themes and regions can control each nesting level independently. Ordered lists use a custom Word multilevel numbering definition (decimal at every level) so nested items restart at 1 while parent levels continue.
+Per-level keys inside `levels`:
+
+- `format` - shorthand or template (see [List numbering formats](#list-numbering-formats))
+- `num_fmt` + `template` - explicit Word numbering control (both required if either is set)
+- any [style key](#style-keys) such as `color` or `font` (applied to list item text)
+
+Settings under `list` apply to both ordered and unordered lists (like `heading` applies to all heading levels). Use `ol` or `ul` for kind-specific overrides.
+
+List indents and numbering formats are compiled into Word multilevel list definitions so numbering and nesting behave natively when you edit the document in Word later. Theme keys still control appearance; complexity stays on our side.
 
 ```yaml
 list:
@@ -66,7 +76,44 @@ list:
   indent_step: 14pt
   levels:
     2: { color: "943634" }
+ol:
+  levels:
+    0: { format: "1." }
+    1: { format: "a." }
+ul:
+  levels:
+    0: { format: "•" }
+    1: { format: "◦" }
 ```
+
+### List numbering formats
+
+Use `format` for shorthand or templates. The default ordered format is `1.` (`1.`, `2.`, `3.`). Use `1` in a template string when you want numbers without a trailing period.
+
+| `format` value | Numbering | Display examples |
+|----------------|-----------|------------------|
+| `1` | decimal | 1, 2, 3 (via template `1` → `%1`) |
+| `1.` | decimal | 1., 2., 3. |
+| `a` / `alph` | lower letter | a, b, c |
+| `a.` | lower letter | a., b., c. |
+| `A` / `Alph` | upper letter | A, B, C |
+| `(A)` | upper letter | (A), (B), (C) |
+| `i` / `roman` | lower Roman | i, ii, iii |
+| `roman )` | lower Roman | i ), ii ), iii ) |
+| `I` / `Roman` | upper Roman | I, II, III |
+| `Section 1:` | decimal | Section 1:, Section 2:, … |
+
+For full control, set explicit Word properties:
+
+```yaml
+ol:
+  levels:
+    2:
+      num_fmt: upperRoman
+      template: "(%1)"
+```
+
+Bullet lists use the same `format` key (`•`, `-`, `*`, or `bullet`).
 
 Spacing/indent sizes can be given in points or inches (`10` or `10pt` = 10 points, `10in` = 10 inches).
 

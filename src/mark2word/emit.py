@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import nsdecls, qn
@@ -21,12 +22,16 @@ from mark2word.plugins import block_emitter
 from mark2word.theme import (
     HEADINGS,
     PAGE_SIZES,
+    NumberingConfig,
     Resolver,
     deep_merge,
     hex_color,
     pt_value,
     to_length,
 )
+
+MARK2WORD_BODY = "Mark2word Body"
+MARK2WORD_CODE = "Mark2word Code"
 
 ALIGN = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -119,6 +124,25 @@ def set_border_bottom(paragraph, spec: dict[str, Any]) -> None:
     ))
 
 
+def _ensure_paragraph_style(doc: Document, name: str, base_name: str, resolved: dict[str, Any]):
+    try:
+        style = doc.styles[name]
+    except KeyError:
+        style = doc.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH, True)
+        style.base_style = doc.styles[base_name]
+    style.font.name = resolved.get("font", style.font.name)
+    if resolved.get("size") is not None:
+        style.font.size = Pt(resolved["size"])
+    if resolved.get("color"):
+        style.font.color.rgb = hex_color(resolved["color"])
+    if resolved.get("bold") is not None:
+        style.font.bold = resolved["bold"]
+    if resolved.get("italic") is not None:
+        style.font.italic = resolved["italic"]
+    style.paragraph_format.space_before = Pt(0)
+    style.paragraph_format.space_after = Pt(0)
+
+
 def configure_document_styles(doc: Document, resolver: Resolver) -> None:
     base = resolver.resolve("body")
     normal = doc.styles["Normal"]
@@ -128,6 +152,9 @@ def configure_document_styles(doc: Document, resolver: Resolver) -> None:
         normal.font.color.rgb = hex_color(base["color"])
     normal.paragraph_format.space_before = Pt(0)
     normal.paragraph_format.space_after = Pt(0)
+
+    _ensure_paragraph_style(doc, MARK2WORD_BODY, "Normal", base)
+    _ensure_paragraph_style(doc, MARK2WORD_CODE, "Normal", resolver.resolve("code"))
 
     for level in range(1, 7):
         element = f"h{level}"
@@ -168,6 +195,7 @@ def emit_paragraph(
     prev_list_paragraph=None,
     list_run_num_id: int | None = None,
     expected_ol_number: int | None = None,
+    numbering_config: NumberingConfig | None = None,
     verbose: bool = False,
     md_path: Path | None = None,
     code_style: dict[str, Any] | None = None,
@@ -199,13 +227,14 @@ def emit_paragraph(
             level=level,
             prev=prev_list_paragraph,
             run_num_id=list_run_num_id,
+            numbering_config=numbering_config,
         )
     elif block_type == "code":
-        p = doc.add_paragraph()
+        p = doc.add_paragraph(style=MARK2WORD_CODE)
     elif heading := _heading_style_name(block_type):
         p = doc.add_paragraph(style=heading)
     else:
-        p = doc.add_paragraph()
+        p = doc.add_paragraph(style=MARK2WORD_BODY)
 
     apply_paragraph_style(p, style)
     pf = p.paragraph_format
@@ -298,6 +327,7 @@ def emit_from_ast(
     prev_list_ordered: bool | None = None
     list_run_num_id: int | None = None
     ol_expected: dict[int, int] = {}
+    numbering_configs: dict[tuple[tuple[str, ...], bool], NumberingConfig] = {}
     code_style = resolver.resolve("code")
 
     for block in blocks:
@@ -312,12 +342,24 @@ def emit_from_ast(
             continue
 
         region = tuple(data.get("region", []))
+        is_ordered = bool(data.get("ordered"))
+        numbering_config = None
         if block_type == "list":
-            style = resolver.resolve_list_style(int(data.get("list_level", 0)), region)
+            cache_key = (region, is_ordered)
+            if cache_key not in numbering_configs:
+                numbering_configs[cache_key] = resolver.resolve_numbering_config(
+                    region,
+                    ordered=is_ordered,
+                )
+            numbering_config = numbering_configs[cache_key]
+            style = resolver.resolve_list_style(
+                int(data.get("list_level", 0)),
+                region,
+                ordered=is_ordered,
+            )
         else:
             style = resolver.resolve(block_type, region)
         expected = None
-        is_ordered = bool(data.get("ordered"))
         same_list_run = (
             block_type == "list"
             and prev_list_p is not None
@@ -344,6 +386,7 @@ def emit_from_ast(
             prev_list_paragraph=list_prev,
             list_run_num_id=run_num_id,
             expected_ol_number=expected,
+            numbering_config=numbering_config,
             verbose=verbose,
             md_path=md_path,
             code_style=code_style,

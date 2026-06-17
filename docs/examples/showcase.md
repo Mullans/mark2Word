@@ -25,7 +25,7 @@ This document demonstrates how mark2word turns a styled Markdown dialect into a 
 
 A plain body paragraph with **bold**, *italic*, ***bold italic***, _underscore italic_, __underscore bold__, and `inline code`. Adding links also works: [mark2word on GitHub](https://github.com/Mullans/mark2Word). You can even use `||` in the middle of a line to split it into left- and right-aligned sides.
 
-Conference Room A || March 17, 2026
+Left-aligned Text || Right-aligned Text
 
 <!-- region: pullquote -->
 You can even add in custom styling: the same Markdown skeleton can look like a memo, a proposal, or a résumé depending on the YAML you attach.

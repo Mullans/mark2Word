@@ -1,7 +1,7 @@
 """Markdown to Word conversion with YAML theming."""
 
 from mark2word.ast import Block, InlineRun
-from mark2word.cli import main
+from mark2word.cli import convert_one, main, resolve_output_path, validate_document
 from mark2word.emit import build
 from mark2word.errors import (
     FrontmatterError,
@@ -11,8 +11,16 @@ from mark2word.errors import (
     ThemeError,
 )
 from mark2word.parser import parse_blocks, parse_inline, parse_to_ast
+from mark2word.paths import ensure_input_readable, ensure_output_writable
 from mark2word.plugins import register_block_emitter, register_block_parser
-from mark2word.theme import Resolver, deep_merge, discover_theme_dirs, load_theme, split_frontmatter
+from mark2word.theme import (
+    Resolver,
+    deep_merge,
+    discover_theme_dirs,
+    ensure_theme_chain_readable,
+    load_theme,
+    split_frontmatter,
+)
 
 __all__ = [
     "Block",
@@ -24,8 +32,12 @@ __all__ = [
     "Resolver",
     "ThemeError",
     "build",
+    "convert_one",
     "deep_merge",
     "discover_theme_dirs",
+    "ensure_input_readable",
+    "ensure_output_writable",
+    "ensure_theme_chain_readable",
     "load_theme",
     "main",
     "parse_blocks",
@@ -33,7 +45,9 @@ __all__ = [
     "parse_to_ast",
     "register_block_emitter",
     "register_block_parser",
+    "resolve_output_path",
     "split_frontmatter",
+    "validate_document",
 ]
 
 if __name__ == "__main__":
@@ -41,4 +55,4 @@ if __name__ == "__main__":
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    main()
+    sys.exit(main())

@@ -25,6 +25,34 @@ from mark2word.parser import split_dual_align
 from mark2word.theme import discover_theme_dirs
 
 
+def _abstract_level_lefts(docx_path: Path) -> list[float]:
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    with zipfile.ZipFile(docx_path) as z:
+        root = ET.fromstring(z.read("word/numbering.xml"))
+    for ab in root.findall("w:abstractNum", ns):
+        multi = ab.find("w:multiLevelType", ns)
+        if multi is None or multi.get(f"{W}val") != "multilevel":
+            continue
+        indents: list[float] = []
+        for ilvl in range(9):
+            for lvl in ab.findall("w:lvl", ns):
+                if lvl.get(f"{W}ilvl") != str(ilvl):
+                    continue
+                ind = lvl.find("w:pPr/w:ind", ns)
+                if ind is None:
+                    ind = lvl.find("w:ind", ns)
+                if ind is not None and ind.get(f"{W}left") is not None:
+                    indents.append(float(ind.get(f"{W}left")))
+                break
+        if indents:
+            return indents
+    raise AssertionError("no multilevel abstract found in docx")
+
+
 class FrontmatterTests(unittest.TestCase):
     def test_lf_frontmatter(self):
         front, body = split_frontmatter("---\ntitle: One\n---\n# Body\n")
@@ -159,12 +187,45 @@ class Tier2Tests(unittest.TestCase):
                 md_body="- top\n  - nested\n    - deep\n",
                 out_path=out,
             )
-            doc = Document(out)
-            bullets = [p for p in doc.paragraphs if p.style.name == "List Bullet"]
-            indents = [p.paragraph_format.left_indent.pt for p in bullets]
-            self.assertAlmostEqual(indents[0], 12.0, places=1)
-            self.assertAlmostEqual(indents[1], 30.0, places=1)
-            self.assertAlmostEqual(indents[2], 48.0, places=1)
+            indents = _abstract_level_lefts(out)
+            self.assertAlmostEqual(indents[0], 12.0 * 20, delta=1)
+            self.assertAlmostEqual(indents[1], 30.0 * 20, delta=1)
+            self.assertAlmostEqual(indents[2], 48.0 * 20, delta=1)
+
+    def test_ol_level_format_in_abstract(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "ol-format.docx"
+            build(
+                glob={},
+                external={"ol": {"levels": {1: {"format": "a."}}}},
+                md_body="1. one\n  1. nested\n",
+                out_path=out,
+            )
+            import zipfile
+            import xml.etree.ElementTree as ET
+
+            W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+            ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            with zipfile.ZipFile(out) as z:
+                root = ET.fromstring(z.read("word/numbering.xml"))
+            level1 = None
+            level0_txt = None
+            for ab in root.findall("w:abstractNum", ns):
+                multi = ab.find("w:multiLevelType", ns)
+                if multi is None or multi.get(f"{W}val") != "multilevel":
+                    continue
+                for lvl in ab.findall("w:lvl", ns):
+                    ilvl = lvl.get(f"{W}ilvl")
+                    fmt = lvl.find("w:numFmt", ns)
+                    txt = lvl.find("w:lvlText", ns)
+                    val = txt.get(f"{W}val") if txt is not None else None
+                    fmt_val = fmt.get(f"{W}val") if fmt is not None else None
+                    if ilvl == "0":
+                        level0_txt = val
+                    if ilvl == "1":
+                        level1 = (fmt_val, val)
+            self.assertEqual(level0_txt, "%1.")
+            self.assertEqual(level1, ("lowerLetter", "%2."))
 
     def test_list_level_style_override(self):
         with TemporaryDirectory() as tmp:
@@ -260,6 +321,35 @@ class Tier2Tests(unittest.TestCase):
                     aid = ab.get(f"{W}abstractNumId")
                     decimal_abstracts.append(aid)
             self.assertTrue(decimal_abstracts)
+
+    def test_nested_ordered_lvl_text_uses_level_placeholders(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "nested-lvltext.docx"
+            build(
+                glob={},
+                external={},
+                md_body="1. one\n2. two\n  1. nested\n3. three\n",
+                out_path=out,
+            )
+            import zipfile
+            import xml.etree.ElementTree as ET
+
+            W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+            ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            with zipfile.ZipFile(out) as z:
+                root = ET.fromstring(z.read("word/numbering.xml"))
+            texts = {}
+            for ab in root.findall("w:abstractNum", ns):
+                multi = ab.find("w:multiLevelType", ns)
+                if multi is None or multi.get(f"{W}val") != "multilevel":
+                    continue
+                for lvl in ab.findall("w:lvl", ns):
+                    ilvl = lvl.get(f"{W}ilvl")
+                    txt = lvl.find("w:lvlText", ns)
+                    if ilvl is not None and txt is not None:
+                        texts[ilvl] = txt.get(f"{W}val")
+            self.assertEqual(texts.get("0"), "%1.")
+            self.assertEqual(texts.get("1"), "%2.")
 
     def test_fenced_code_block(self):
         blocks = parse_blocks("```py\nprint(1)\n```\n")

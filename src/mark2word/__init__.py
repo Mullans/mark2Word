@@ -74,33 +74,34 @@ def split_frontmatter(text):
     return front, m.group(2)
 
 
-def load_theme(front: dict[str, Any], md_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Load the `extends` path if present in `front`
+def _theme_candidates(ext: Path, md_path: Path, theme_dirs=None):
+    if ext.is_absolute():
+        yield ext
+        return
+    yield md_path.parent / ext
+    for theme_dir in theme_dirs or []:
+        yield Path(theme_dir).expanduser() / ext
 
-    Parameters
-    ----------
-    front : _type_
-        _description_
-    md_path : _type_
-        _description_
 
-    Returns
-    -------
-    _type_
-        _description_
+def load_theme(
+    front: dict[str, Any],
+    md_path: Path,
+    theme_dirs=None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load the `extends` path if present.
 
-    Raises
-    ------
-    FileNotFoundError
-        _description_
+    Relative theme paths are searched in the markdown file's folder first, then
+    in any explicit theme directories supplied by the caller.
     """
-    """Load the `extends` path if present, Return (external_theme, global_frontmatter). `extends` missing-> error."""
     external = {}
+    front = dict(front)
     ext = front.pop("extends", None)
     if ext is not None:
-        ext_path = (md_path.parent / ext).resolve()
-        if not ext_path.exists():
-            raise FileNotFoundError(f"extends references missing theme: {ext_path}")
+        checked = [path.resolve() for path in _theme_candidates(Path(ext), md_path, theme_dirs)]
+        ext_path = next((path for path in checked if path.exists()), None)
+        if ext_path is None:
+            searched = ", ".join(str(path) for path in checked)
+            raise FileNotFoundError(f"extends references missing theme: {ext}; searched: {searched}")
         external = yaml.safe_load(ext_path.read_text(encoding="utf-8")) or {}
     return external, front
 
@@ -391,6 +392,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Convert a styled-Markdown dialect into a Word document."
     )
+    parser.add_argument(
+        "--theme-dir",
+        action="append",
+        default=[],
+        type=Path,
+        help="Additional folder to search for relative frontmatter extends paths.",
+    )
     parser.add_argument("input_file", type=Path)
     parser.add_argument("output_file", nargs="?", type=Path)
     args = parser.parse_args()
@@ -399,5 +407,9 @@ def main():
     out_path = args.output_file or md_path.with_suffix(".docx")
     text = md_path.read_text(encoding="utf-8")
     front, body = split_frontmatter(text)
-    external, glob = load_theme(front, md_path)
+    external, glob = load_theme(front, md_path, theme_dirs=args.theme_dir)
     build(front, glob, external, body, md_path, out_path)
+
+
+if __name__ == "__main__":
+    main()

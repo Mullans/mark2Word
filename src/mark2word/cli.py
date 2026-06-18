@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 import warnings
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from mark2word.emit import build
@@ -21,6 +22,7 @@ from mark2word.theme import (
     load_theme,
     split_frontmatter,
 )
+from mark2word.theme_validate import validate_theme_file
 
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
@@ -29,6 +31,18 @@ EXIT_USAGE = 2
 
 class UsageError(Mark2WordError):
     """Invalid CLI invocation (maps to exit code 2)."""
+
+
+def validate_theme(theme_path: Path, theme_dirs: list[Path]) -> None:
+    validate_theme_file(theme_path, theme_dirs=theme_dirs)
+    print(f"OK {theme_path}")
+
+
+def _package_version() -> str:
+    try:
+        return version("mark2word")
+    except PackageNotFoundError:
+        return "0.1.0"
 
 
 def validate_document(md_path: Path, theme_dirs: list[Path]) -> None:
@@ -169,9 +183,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Validate frontmatter, theme, and markdown without writing a .docx.",
     )
     parser.add_argument(
+        "--check-theme",
+        type=Path,
+        metavar="THEME",
+        help="Validate a theme YAML file (including extends chain) without converting.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Emit warnings such as ignored ordered-list numbers.",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"mark2word {_package_version()}",
     )
     parser.add_argument(
         "positional_inputs",
@@ -183,6 +209,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.verbose:
         warnings.simplefilter("always")
+
+    if args.check_theme is not None:
+        try:
+            validate_theme(args.check_theme, list(args.theme_dir))
+        except Mark2WordError as exc:
+            print(str(exc), file=sys.stderr)
+            return EXIT_FAILURE
+        return EXIT_SUCCESS
 
     try:
         jobs = _prepare_jobs(args)

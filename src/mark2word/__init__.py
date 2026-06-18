@@ -1,7 +1,7 @@
 """Markdown to Word conversion with YAML theming."""
 
 from mark2word.ast import Block, InlineRun
-from mark2word.cli import convert_one, main, resolve_output_path, validate_document
+from mark2word.cli import convert_one, main, resolve_output_path, validate_document, validate_theme
 from mark2word.emit import build
 from mark2word.errors import (
     FrontmatterError,
@@ -51,6 +51,7 @@ __all__ = [
     "resolve_output_path",
     "split_frontmatter",
     "validate_document",
+    "validate_theme",
 ]
 
 if __name__ == "__main__":

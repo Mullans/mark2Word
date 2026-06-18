@@ -2,15 +2,21 @@
 
 Read this when creating, editing, reviewing, or substantially customizing a Mark2Word theme.
 
+Validate a theme before converting:
+
+```bash
+uv run mark2word --check-theme .mark2word/themes/my-theme.yaml --theme-dir .mark2word/themes
+```
+
 ## Location
 
-Create project themes in a local folder such as:
+Create project themes in:
 
 ```text
 .mark2word/themes/
 ```
 
-Pass that folder during conversion:
+Pass during conversion:
 
 ```bash
 python /path/to/mark2word/scripts/mark2word.py \
@@ -19,17 +25,17 @@ python /path/to/mark2word/scripts/mark2word.py \
   /path/to/project/document.md
 ```
 
-The converter also auto-discovers `.mark2word/themes` near the input file unless `--no-auto-theme-dir` is set.
+Auto-discovery: `.mark2word/themes` near the input file (unless `--no-auto-theme-dir`).
 
 ## Starting Point
 
-Use `assets/base-theme.yaml` as the baseline. For a custom theme, copy it into the project theme folder, rename it, and edit:
+Copy `assets/base-theme.yaml` into the project theme folder:
 
 ```text
 .mark2word/themes/executive-resume.yaml
 ```
 
-Point the Markdown document at it:
+Point the document at it:
 
 ```yaml
 ---
@@ -39,62 +45,53 @@ extends: executive-resume.yaml
 
 ## Theme Inheritance (`extends`)
 
-Themes compose through `extends`. It works in **both** places:
+Themes compose through `extends` in **both** markdown frontmatter and theme YAML files. Child keys deep-merge over parents; later layers win. Cycles are rejected.
 
-1. **Markdown frontmatter** — primary entry point for a document.
-2. **Theme YAML files** — chain base → specialized layers.
-
-Each child theme is deep-merged over its parent. Later layers win on conflicting keys.
-
-**Example chain** (from `docs/examples/` in the mark2Word repo):
+**Example chain** (`docs/examples/` in the mark2Word repo):
 
 ```yaml
-# showcase-base.yaml — shared defaults
+# showcase-base.yaml
 font: Calibri
-size: 10
 heading: { bold: true, color: "2B579A" }
 ```
 
 ```yaml
-# showcase-theme.yaml — document-specific layer
+# showcase-theme.yaml
 extends: showcase-base.yaml
 size: 11
 h1: { size: 22 }
-table: { size: 10 }
 th: { bold: true, fill: "2B579A", color: "FFFFFF" }
 ```
 
 ```yaml
-# showcase.md frontmatter — per-document tweaks
+# showcase.md frontmatter
 ---
 extends: showcase-theme.yaml
 $pullquote: { color: "943634" }
 ---
 ```
 
-Relative `extends` paths resolve from the Markdown file's directory, then each `--theme-dir` in order. Cycles are detected and rejected with a clear error.
-
-You do **not** need to flatten inheritance into a single file — layered themes are the intended pattern.
+Layered themes are the intended pattern — do not flatten into one file.
 
 ## Style Priority
 
-Within the merged theme, styles resolve in this order (later wins):
+1. Built-in defaults  
+2. External theme chain  
+3. Frontmatter globals  
+4. Active region path (outer → inner)  
 
-1. Built-in defaults
-2. External theme chain (base → … → leaf theme file)
-3. Frontmatter globals (keys not starting with `$`)
-4. Active region path — outer regions first, inner regions last
-
-Within a layer, specificity applies: `h2` beats `heading`, `body` beats `text`, `ol`/`ul` beat shared `list`.
+Within a layer: `h2` > `heading`, `body` > `text`, `ol`/`ul` > `list`.
 
 ## Theme Shape
 
-A theme is YAML. Top-level properties apply globally; element blocks override them for specific content.
-
 ```yaml
+title: My Document
+
 page:
   size: letter
   margin: { top: 0.5in, bottom: 0.5in, left: 0.7in, right: 0.7in }
+  header: "{title}"
+  footer: "Confidential || Page {page} of {pages}"
 
 font: Calibri
 size: 10
@@ -102,22 +99,43 @@ color: "000000"
 
 text: { line: 1.1 }
 body: { space_after: 2pt }
+
+blockquote:
+  indent_left: 18pt
+  italic: true
+
 list:
-  space_before: 2pt
   space_between: 2pt
-  space_after: 6pt
   indent_left: 9pt
   indent_hanging: 9pt
   indent_step: 9pt
 
 heading: { bold: true, color: "2B579A" }
-h1: { size: 14, color: "000000" }
-h2: { size: 12, space_before: 12pt, space_after: 4pt, border_bottom: { size: 0.5pt, color: "2B579A" } }
+h2: { border_bottom: { size: 0.5pt, color: "2B579A" } }
 
-code: { font: Consolas, size: 9, color: "1F497D" }
+code:
+  font: Consolas
+  size: 9
+  langs:
+    python: { color: "000080" }
 
-table: { font: Calibri, size: 10 }
-th: { bold: true, color: "FFFFFF", fill: "2B579A", align: center }
+image:
+  max_width: 5in
+  alt_mode: caption
+  align: center
+
+hr:
+  border_bottom: { size: 0.5pt, color: "999999" }
+
+table:
+  space_before: 6pt
+  space_after: 6pt
+  border: { size: 0.5pt, color: "CCCCCC" }
+th:
+  bold: true
+  fill: "2B579A"
+  color: "FFFFFF"
+  padding: { top: 4pt, bottom: 4pt, left: 6pt, right: 6pt }
 td: { size: 10 }
 ```
 
@@ -127,41 +145,66 @@ td: { size: 10 }
 |-----|------------|
 | `body` | Ordinary paragraphs |
 | `text` | Shared defaults for `body` and list items |
-| `list` | Both ordered and unordered lists |
-| `ol` | Ordered lists only (overrides `list`) |
-| `ul` | Unordered lists only (overrides `list`) |
-| `heading` | Shared defaults for `h1`–`h6` |
-| `h1` … `h6` | Individual heading levels |
+| `blockquote` | `>` blockquote lines |
 | `code` | Fenced and inline code |
-| `table` | Whole table defaults |
+| `image` | `![alt](path)` images |
+| `hr` | Horizontal rules (`---` in body) |
+| `list` | Both ordered and unordered lists |
+| `ol` / `ul` | Kind-specific list overrides |
+| `heading` | Shared heading defaults |
+| `h1` … `h6` | Individual heading levels |
+| `table` | Whole table |
 | `th` / `td` | Header / data cells |
-| `$name` | Named region matched by `<!-- region: name -->` |
+| `$name` | Region matched by `<!-- region: name -->` |
 
-Region blocks accept the same nested keys (`body`, `h2`, `list`, etc.) scoped to that region.
+Regions accept nested keys (`body`, `h2`, `list`, etc.) scoped to that region.
 
 ## Style Keys
 
-Supported style properties:
-
-- `font` — font family (`Calibri`, `Aptos`, `Consolas`, …)
-- `size` — point size (`10` or `10pt`)
-- `color` — hex color (`"2B579A"` or `"#2B579A"`)
-- `bold`, `italic` — `true` / `false`
+- `font`, `size`, `color`, `bold`, `italic`
 - `align` — `left`, `center`, `right`, `justify`
-- `line` — line-spacing multiple (`1.1`) or exact points (`13pt`)
-- `space_before`, `space_after` — paragraph spacing
-- `space_between` — spacing between adjacent list items
-- `indent_left`, `indent_first_line`, `indent_hanging` — paragraph indents
-- `border_bottom` — bottom border, e.g. `{ size: 0.5pt, color: "2B579A" }`
-- `fill` — table cell background hex (for `th` / `td`)
+- `line` — multiple (`1.1`) or exact points (`13pt`)
+- `space_before`, `space_after`, `space_between`
+- `indent_left`, `indent_right`, `indent_first_line`, `indent_hanging`
+- `border_bottom` — `{ size: 0.5pt, color: "2B579A" }`
+- `fill` — table cell background
 
-Lengths: bare points (`10`), explicit points (`10pt`), or inches (`0.5in`).
+**Image** (under `image`):
+
+| Key | Purpose |
+|-----|---------|
+| `width` | Fixed picture width |
+| `max_width` | Scale down proportionally if wider |
+| `align` | Caption alignment when alt is shown |
+| `alt_mode` | `doc` (accessibility, default), `caption`, `both`, `none` |
+
+**Table** (under `table`, `th`, `td`):
+
+| Key | Purpose |
+|-----|---------|
+| `border` | On `table`: `{ size, color }` |
+| `padding` | On `th`/`td`: `{ top, bottom, left, right }` in points |
+| `space_before`, `space_after` | On `table` |
+
+**Code** per-language (fence tag matches key under `code.langs`):
+
+```yaml
+code:
+  font: Consolas
+  langs:
+    python: { color: "000080" }
+    yaml: { color: "008080" }
+```
+
+Lengths: bare points (`10`), `10pt`, or `0.5in`.
 
 ## Page Settings
 
-Supported page sizes: `letter`, `a4`.
+Sizes: `letter`, `a4`.
 
 ```yaml
+title: My Document    # {title} in header/footer; else first h1
+
 page:
   size: letter
   margin:
@@ -169,16 +212,38 @@ page:
     bottom: 0.5in
     left: 0.7in
     right: 0.7in
+  header: "{title}"
+  footer: "Draft || Page {page} of {pages}"
 ```
+
+Placeholders: `{page}`, `{pages}`, `{title}`. Dual-align with `left || right`.
+
+Theme page chrome is document-wide. Body `$footer` regions in markdown are content footers, not Word page footers.
+
+## Invisible Markdown (Word-only)
+
+Not shown in normal Markdown preview:
+
+- YAML frontmatter
+- `<!-- region: … -->`, `<!-- /region -->`, `<!-- pagebreak -->`
+
+Horizontal rules use body `---` after frontmatter is stripped — not confused with frontmatter fences.
+
+Do not use `\newpage` (visible in MD renderers). Use `<!-- pagebreak -->`.
+
+## Internal Links
+
+Headings get Word bookmarks (slug from text). Link with `[text](#heading-slug)`. Unknown anchors fail at conversion.
+
+## Blockquotes and Horizontal Rules
+
+- **Blockquote:** lines starting with `>` (blank line ends the quote unless next line continues with `>`)
+- **HR:** `---`, `***`, or `___` alone on a line in the document body
 
 ## Lists and Numbering
 
-List appearance splits into two mechanisms:
-
-1. **Paragraph/run styling** — colors, fonts, spacing from theme keys.
-2. **Word multilevel numbering** — indents and bullet/number formats compiled into native Word list definitions so editing in Word behaves correctly.
-
-Shared list keys under `list` apply to both kinds. Use `ol` or `ul` for kind-specific overrides (same relationship as `heading` → `h1`–`h6`).
+1. **Paragraph/run styling** — colors, fonts, spacing from theme keys.  
+2. **Word multilevel numbering** — indents and formats compiled into native list definitions.
 
 ```yaml
 list:
@@ -197,33 +262,27 @@ ul:
     1: { format: "◦" }
 ```
 
-### List meta keys (under `list`, `ol`, or `ul`)
+### List meta keys
 
-- `indent_left`, `indent_hanging`, `indent_step` — nesting indents (compiled into Word numbering)
-- `levels` — per-depth overrides keyed by `0`, `1`, `2`, …
+- `indent_left`, `indent_hanging`, `indent_step`
+- `levels` — keyed by `0`, `1`, `2`, …
 
-### Per-level keys inside `levels`
+### Per-level keys
 
-- `format` — shorthand or template (see table below)
-- `num_fmt` + `template` — explicit Word numbering (both required if either is set)
-- Any [style key](#style-keys) such as `color` or `font` (applied to list item text)
+- `format` — shorthand (see table)
+- `num_fmt` + `template` — explicit Word control (both required if either set)
+- Any style key for list item text
 
-Default ordered format is `1.` (displays `1.`, `2.`, `3.`). Use template `1` without a trailing period when you want `1`, `2`, `3`.
+Default ordered format: `1.`
 
-| `format` value | Numbering | Examples |
-|----------------|-----------|----------|
-| `1` | decimal | 1, 2, 3 |
-| `1.` | decimal | 1., 2., 3. |
-| `a` / `alph` | lower letter | a, b, c |
-| `a.` | lower letter | a., b., c. |
-| `A` / `Alph` | upper letter | A, B, C |
-| `(A)` | upper letter | (A), (B), (C) |
-| `i` / `roman` | lower Roman | i, ii, iii |
-| `roman )` | lower Roman | i ), ii ), iii ) |
-| `I` / `Roman` | upper Roman | I, II, III |
-| `Section 1:` | decimal | Section 1:, Section 2:, … |
-| `•`, `-`, `*` | bullet | literal bullet character |
-| `bullet` | bullet | Word bullet format |
+| `format` | Examples |
+|----------|----------|
+| `1` / `1.` | 1, 2, 3 / 1., 2., 3. |
+| `01` / `01.` | 01, 02, 03 |
+| `a`, `a.`, `A`, `(A)` | Letters |
+| `i`, `roman`, `I`, `Roman` | Roman numerals |
+| `Section 1:` | Section 1:, Section 2:, … |
+| `•`, `-`, `*`, `bullet` | Bullets |
 
 Explicit control:
 
@@ -235,23 +294,22 @@ ol:
       template: "(%1)"
 ```
 
-**Markdown nesting:** indent list items with 2 spaces per level. A body paragraph between items starts a new list run (ordered numbering restarts).
+**Nesting:** 2 spaces per level. Body paragraph between items starts a new list run.
 
 ## Regions
-
-Regions provide local style overrides. Define the region in the theme or frontmatter:
 
 ```yaml
 $header:
   align: center
   h1: { space_after: 1.5pt }
-  text: { size: 9, space_after: 0.75pt }
 
 $pullquote:
-  body: { align: center, italic: true, space_before: 8pt }
+  body:
+    align: center
+    indent_left: 24pt
+    indent_right: 24pt
+    italic: true
 ```
-
-Use in Markdown:
 
 ```markdown
 <!-- region: header -->
@@ -260,29 +318,29 @@ Chicago, IL || greg@example.com
 <!-- /region -->
 ```
 
-Nested regions are supported. Inner regions override outer regions on conflicting keys.
+Nested regions supported.
 
 ## Tables and Code
 
-Pipe tables pick up `table`, `th`, and `td` styles. Header row is the first row; the separator row (`| - | - |`) is required.
+Pipe tables: first row = header, separator row required (`| - | - |`).
 
-Fenced code blocks and inline `` `code` `` use the `code` target. Language tags on fences are parsed but not yet used for syntax highlighting.
+Fenced blocks use `code` styling; language tag selects `code.langs.{lang}` override when present.
 
 ## Design Workflow
 
-1. Identify the document type: resume, report, proposal, memo, etc.
-2. Copy `assets/base-theme.yaml` into `.mark2word/themes/<name>.yaml` or chain from it with `extends`.
-3. Adjust global typography: `font`, `size`, `color`, `text.line`, page margins.
-4. Tune headings, lists, tables, and code styling.
-5. Add `$region` blocks only for repeated local treatments (headers, pull quotes, footers).
-6. Convert a representative document; use `--check` first if iterating on YAML syntax.
-7. Inspect the `.docx` in Word — especially nested lists, tables, and region boundaries.
+1. Identify document type (resume, report, memo, …).  
+2. Copy or chain from `assets/base-theme.yaml`.  
+3. Set global typography and page settings.  
+4. Tune headings, lists, tables, code, images.  
+5. Add `$region` blocks only for repeated local treatments.  
+6. Run `--check-theme` on the theme, `--check` on a sample document.  
+7. Convert and inspect in Word.
 
 ## Common Mistakes
 
-- **Missing `--theme-dir`** — if `extends: base-theme.yaml` cannot be found, include the skill `assets/` folder and any project theme folder.
-- **Overusing regions** — prefer element styles until a local block is genuinely needed.
-- **Unquoted hex colors** — quote values like `"2B579A"` so YAML does not treat them as numbers.
-- **Flattening theme chains** — nested `extends` in theme files is supported; use layers instead of one giant file.
-- **Expecting `indent_right`** — not currently supported; use dual-align lines or margins instead.
-- **Ordered list gaps** — markdown `1.` then `3.` is accepted but `--verbose` warns; Word continues the sequence.
+- **Missing `--theme-dir`** — include skill `assets/` and project theme folder when using `extends: base-theme.yaml`.  
+- **Unquoted hex colors** — use `"2B579A"` so YAML does not parse as a number.  
+- **Flattening theme chains** — use layered `extends` instead of one giant file.  
+- **Ordered list gaps** — `1.` then `3.` is accepted; `--verbose` warns.  
+- **Confusing page chrome with body footers** — theme `page.footer` vs markdown `$footer` region.  
+- **Internal link slug mismatch** — slug is lowercase, hyphenated heading text.

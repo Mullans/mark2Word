@@ -1,91 +1,138 @@
 # mark2Word
 
-A tool to convert Markdown files to Word documents, but with all of the styling thrown in too.
+Convert styled Markdown to Word (`.docx`). YAML frontmatter and external themes control typography and layout; the Markdown body stays readable in any viewer.
 
 ## Installing
 
-Until I set up packaging, just clone the repo, then run `uv sync` from inside it to install the dependencies.
+Clone the repo and run `uv sync`. CLI entry points: `mark2word`, `sync-skill`.
 
 ## Running
 
 ```bash
 uv run mark2word YOUR_FILE.md
-# Keep your themes in a different directory
 uv run mark2word --theme-dir docs/examples YOUR_FILE.md
-# Specify the output file name (default just swaps extension)
-uv run mark2word --input YOUR_FILE.md --output YOUR_DOC.docx
-# Convert multiple files at once
-uv run mark2word --input FILE1.md --input FILE2.md --output OUT_FOLDER
-# Copy the script into the skill
+uv run mark2word -i FILE1.md -i FILE2.md -o OUT_FOLDER
+uv run mark2word -i FILE.md -o OUTPUT.docx
+uv run mark2word --check YOUR_FILE.md
+uv run mark2word --check-theme my-theme.yaml --theme-dir .mark2word/themes
+uv run mark2word --version
 uv run sync-skill
 ```
 
+| Flag | Purpose |
+|------|---------|
+| `-i` / `--input` | Markdown input (repeat for batch) |
+| `-o` / `--output` | Output `.docx` or directory (directory required for batch) |
+| `--theme-dir` | Folder for relative `extends` paths (repeatable) |
+| `--no-auto-theme-dir` | Skip auto-discovery of `.mark2word/themes` |
+| `--check` | Validate frontmatter, theme, and markdown; no `.docx` written |
+| `--check-theme` | Validate a theme YAML file (including `extends` chain) |
+| `--verbose` | Warn on ordered-list number mismatches |
+| `-V` / `--version` | Print version |
+
+Exit codes: `0` success, `1` error, `2` usage error.
+
+The converter validates inputs and outputs before building (missing files, theme errors, read-only or locked outputs).
+
 ## Markdown Elements
 
-- `#` .. `######` - headings (h1..h6)
-- `- item`   /   `1. item` - bulleted / numbered list items (real Word lists)
-- `text` - body paragraph (one line == one paragraph)
-- `**b**` `*i*` `***bi***` - inline emphasis (**b** *i* ***bi***)
-- `\\*`  - * (literal asterisk)
-- `left || right` - dual-aligned line (left/right side text is left/right aligned)
-- `<!-- region: name -->` - open a region (resolves to the $name style block)
-- `<!-- /region -->` - close the most recently opened region
+| Syntax | Output |
+|--------|--------|
+| `#` … `######` | Headings (Word bookmarks for internal links) |
+| Plain line | Body paragraph (one line = one paragraph) |
+| `- item` / `1. item` | Bulleted / numbered lists (native Word multilevel; 2 spaces per nest level) |
+| `> quote` | Blockquote (multi-line with `>` prefix) |
+| `**b**` `*i*` `` `code` `` | Inline emphasis and code |
+| `[text](url)` | Hyperlink (bold/italic inside link text supported) |
+| `[text](#slug)` | Internal link to a heading bookmark |
+| `left \|\| right` | Dual-aligned line (ignored inside backticks) |
+| `![alt](path.png)` | Embedded image (path relative to the markdown file) |
+| Pipe table + `\| - \|` separator | Table |
+| ` ```lang ` … ` ``` ` | Fenced code block |
+| `---` / `***` / `___` alone on a line | Horizontal rule (body only — frontmatter stripped first) |
+| `<!-- region: name -->` … `<!-- /region -->` | Named style region |
+| `<!-- pagebreak -->` | Page break |
 
-## Frontmatter (extra styling)
+**Invisible in normal Markdown preview:** YAML frontmatter, HTML comments (`region`, `pagebreak`), and all Word-only styling.
 
-The frontmatter is at the top of the markdown document between `---` fences at the top of the file. Any styling you want to use goes here, or you can reference an external style YAML document (or both).
+**Internal link slugs** are derived from heading text (e.g. `## My Section` → `#my-section`). Duplicate headings get `-2`, `-3`, etc.
+
+## Frontmatter and Themes
+
+Frontmatter sits between `---` fences at the top of the file. Use it for inline styling, region overrides, or to reference an external theme (or both).
 
 ```yaml
+---
 extends: base-theme.yaml
+title: Quarterly Report
 font: Calibri
 body: { space_after: 2pt }
-$my-notes: { size: 14 }
+$callout: { color: "943634" }
+---
 ```
 
-### Elements
+### Theme inheritance (`extends`)
 
-#### Target Keys
+Relative paths resolve from the markdown file's directory, then each `--theme-dir`. Theme YAML files may also declare `extends` (chained inheritance). Child keys deep-merge over parents. Cycles are rejected.
 
-These keys describe the target to apply the style to.
+```text
+document.md  →  extends: report-theme.yaml
+report-theme.yaml  →  extends: base-theme.yaml
+```
 
-- `body` - general body/paragraph text
-- `ol` - ordered-list-only settings
-- `ul` - unordered-list-only settings
-- `list` - shared list settings for both ordered and unordered lists
-- `text` - either `body` or `list`
-- `h1`-`h6` - `#`-`######`
-- `heading` - any headings items (`h1`-`h6`)
-- `$summary` - the region named `summary` (see [Regions](#regions))
+Auto-discovery: unless `--no-auto-theme-dir` is set, `.mark2word/themes` is searched near the input file and in parent directories.
 
-#### Style Keys
+### Target keys
 
-These keys are applied to their current scope. If they aren't within a target, they apply to the entire document.
+| Key | Applies to |
+|-----|------------|
+| `body` | Body paragraphs |
+| `blockquote` | `>` blockquote lines |
+| `code` | Fenced / inline code |
+| `image` | `![alt](path)` images |
+| `hr` | Horizontal rules |
+| `table`, `th`, `td` | Pipe tables |
+| `list`, `ol`, `ul` | List settings (`ol`/`ul` override shared `list`) |
+| `text` | Shared defaults for body and list |
+| `heading`, `h1`–`h6` | Headings |
+| `$name` | Region matched by `<!-- region: name -->` |
 
-- `font` - font family (Calibri)
-- `size` - point size (10 or 10pt)
-- `color` - color hex ("2B579A" or "000000")
-- `bold`, `italic` - true / false
-- `align` - left | center | right | justify
-- `line` - Either the line-spacing multiple (1.1) or the exact spacing in points (13pt)
-- `space_before`, `space_after` - gap above/below this element
-- `space_between` - gap between items of the same type in pts (mainly lists)
-- `indent_left`, `indent_first_line`, `indent_hanging` - left/first-line/hanging indent
-- `fill` - table cell background color hex (for `th` / `td`)
+### Style keys
 
-List keys (under `list`, `ol`, or `ul`):
+- `font`, `size`, `color`, `bold`, `italic`
+- `align` — `left`, `center`, `right`, `justify`
+- `line` — multiple (e.g. `1.1`) or exact points (`13pt`)
+- `space_before`, `space_after`, `space_between`
+- `indent_left`, `indent_right`, `indent_first_line`, `indent_hanging`
+- `border_bottom` — `{ size: 0.5pt, color: "2B579A" }`
+- `fill` — table cell background (for `th` / `td`)
 
-- `indent_left`, `indent_hanging`, `indent_step` - list nesting indents (compiled into Word multilevel numbering)
-- `levels` - per-level overrides keyed by depth (`0`, `1`, `2`, …)
+**Image** (under `image`):
 
-Per-level keys inside `levels`:
+- `width`, `max_width` — size in points or inches; `max_width` scales proportionally
+- `align` — caption alignment when alt text is shown
+- `alt_mode` — `doc` (Word accessibility, default), `caption`, `both`, `none`
 
-- `format` - shorthand or template (see [List numbering formats](#list-numbering-formats))
-- `num_fmt` + `template` - explicit Word numbering control (both required if either is set)
-- any [style key](#style-keys) such as `color` or `font` (applied to list item text)
+**Table** (under `table`, `th`, or `td`):
 
-Settings under `list` apply to both ordered and unordered lists (like `heading` applies to all heading levels). Use `ol` or `ul` for kind-specific overrides.
+- `border` — on `table`: `{ size: 0.5pt, color: "CCCCCC" }`
+- `padding` — on `th`/`td`: `{ top: 4pt, bottom: 4pt, left: 6pt, right: 6pt }`
+- `space_before`, `space_after` — on `table`
 
-List indents and numbering formats are compiled into Word multilevel list definitions so numbering and nesting behave natively when you edit the document in Word later. Theme keys still control appearance; complexity stays on our side.
+**Code** per-language overrides (fence language tag matches key):
+
+```yaml
+code:
+  font: Consolas
+  size: 9
+  langs:
+    python: { color: "000080" }
+    yaml: { color: "008080" }
+```
+
+### List numbering
+
+Settings under `list` apply to both ordered and unordered lists. Use `ol` or `ul` for kind-specific overrides. Indents and formats compile into native Word multilevel definitions.
 
 ```yaml
 list:
@@ -104,87 +151,89 @@ ul:
     1: { format: "◦" }
 ```
 
-### List numbering formats
+Per-level keys: `format`, or `num_fmt` + `template` (both required if either is set), plus any style key for list item text.
 
-Use `format` for shorthand or templates. The default ordered format is `1.` (`1.`, `2.`, `3.`). Use `1` in a template string when you want numbers without a trailing period.
+| `format` | Examples |
+|----------|----------|
+| `1` / `1.` | 1, 2, 3 / 1., 2., 3. |
+| `01` / `01.` | 01, 02, 03 |
+| `a`, `a.`, `A`, `(A)` | a, b, c / A, B, C / (A), (B) |
+| `i`, `roman`, `I`, `Roman` | i, ii, iii / I, II, III |
+| `Section 1:` | Section 1:, Section 2:, … |
+| `•`, `-`, `*`, `bullet` | Bullets |
 
-| `format` value | Numbering | Display examples |
-|----------------|-----------|------------------|
-| `1` | decimal | 1, 2, 3 (via template `1` → `%1`) |
-| `1.` | decimal | 1., 2., 3. |
-| `a` / `alph` | lower letter | a, b, c |
-| `a.` | lower letter | a., b., c. |
-| `A` / `Alph` | upper letter | A, B, C |
-| `(A)` | upper letter | (A), (B), (C) |
-| `i` / `roman` | lower Roman | i, ii, iii |
-| `roman )` | lower Roman | i ), ii ), iii ) |
-| `I` / `Roman` | upper Roman | I, II, III |
-| `Section 1:` | decimal | Section 1:, Section 2:, … |
-
-For full control, set explicit Word properties:
+### Page settings
 
 ```yaml
-ol:
-  levels:
-    2:
-      num_fmt: upperRoman
-      template: "(%1)"
-```
-
-Bullet lists use the same `format` key (`•`, `-`, `*`, or `bullet`).
-
-Spacing/indent sizes can be given in points or inches (`10` or `10pt` = 10 points, `10in` = 10 inches).
-
-#### Special Keys
-
-- `extends` - Path to a yaml style file (relative to the markdown file's location). Not required, but must be a valid file if present.
-- `border_bottom` - If present, add a bottom border line (ie. `{ size: 0.5pt, color: "2B579A" }` to add a blue underline that's 0.5pt thick).
- - `page` - If present, can define page size and margin.
-
-```YAML
+title: My Document          # for {title} in header/footer; falls back to first h1
 page:
-  size: letter
+  size: letter                # or a4
   margin: { top: 0.5in, bottom: 0.5in, left: 0.7in, right: 0.7in }
+  header: "{title}"
+  footer: "Confidential || Page {page} of {pages}"
 ```
+
+Header/footer placeholders: `{page}`, `{pages}`, `{title}`. Use `left || right` for dual-aligned lines.
+
+Theme page chrome is document-wide. Content footers in the markdown body (e.g. a `$footer` region) are separate.
 
 ### Regions
 
-Regions let you change style in local areas, so they take all the same keys as the global scope. You can define regions in the frontmatter by adding a key starting with `$`, and then by putting `<!-- region: REGION_NAME -->` at the start and `<!-- /region -- >` at the end of any part of the markdown you want to group together.
+Define `$region-name` in frontmatter or theme, then wrap markdown:
 
 ```markdown
----
-$main: { color: "2B579A"}
----
-<!-- region: main -->
-# Header Text
-
-lorum ipsum etc...
+<!-- region: callout -->
+Important note with **emphasis**.
 <!-- /region -->
 ```
 
-### Style Priority
+Nested regions supported; inner overrides beat outer.
 
-Styles resolve in order of scope: defaults, external (via `extends`), frontmatter (global), frontmatter (region).
-Within a scope, more specific rules also get priority over less specific ones. For example, style for `h1` would take priority over rules for `heading`.
+### Style priority
+
+1. Built-in defaults  
+2. External theme chain (`extends`)  
+3. Frontmatter globals  
+4. Active region path (outer → inner)  
+
+Within a layer: `h2` beats `heading`, `body` beats `text`, `ol`/`ul` beat `list`.
 
 ## Example
+
+See `docs/examples/showcase.md` with `docs/examples/showcase-theme.yaml` for a full feature demo.
 
 ```markdown
 ---
 extends: base-theme.yaml
+title: Sample Memo
 page:
-  size: letter
-font: Calibri
-size: 12
+  footer: "Draft || Page {page}"
 heading: { bold: true, color: "2B579A" }
-h2: { size: 14, space_after: 1.5pt }
-$header:
-  align: center
-  h2: { space_after: 0pt }
+$header: { align: center }
 ---
-## Some Title
+
 <!-- region: header -->
-## Centered Title
-Lorem ipsum dolor sit something something...
+# Sample Memo
+Author || 2026-06-17
 <!-- /region -->
+
+## Overview
+
+Body with **bold**, [a link](https://example.com), and [a section jump](#overview).
+
+> A blockquote for emphasis.
+
+---
+
+| Item | Status |
+| - | - |
+| Lists | Done |
+
+<!-- pagebreak -->
+
+## Appendix
+
+1. First
+   1. Nested
+2. Second
 ```

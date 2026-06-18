@@ -60,6 +60,11 @@ class ListFormatTests(unittest.TestCase):
         with self.assertRaises(ThemeError):
             parse_format_string("bogus", default_num_fmt="decimal", default_lvl_text="%1")
 
+    def test_zero_padded_format(self):
+        num_fmt, lvl = parse_format_string("01.", default_num_fmt="decimal", default_lvl_text="%1.")
+        self.assertEqual(num_fmt, "decimalZero")
+        self.assertEqual(lvl, "%1.")
+
 
 if __name__ == "__main__":
     unittest.main()

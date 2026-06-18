@@ -217,7 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-docs/smullan_*
+ignore__*
 *.docx
 !docs/examples/showcase.docx
 

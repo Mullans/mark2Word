@@ -11,6 +11,9 @@ from mark2word.plugins import block_parsers
 
 RE_REGION_OPEN = re.compile(r"^<!--\s*region:\s*([A-Za-z0-9_-]+)\s*-->$")
 RE_REGION_CLOSE = re.compile(r"^<!--\s*/region\s*-->$")
+RE_PAGEBREAK = re.compile(r"^<!--\s*pagebreak\s*-->$", re.IGNORECASE)
+RE_HR = re.compile(r"^(---|\*\*\*|___)\s*$")
+RE_BLOCKQUOTE = re.compile(r"^>\s?(.*)$")
 RE_HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 RE_UL = re.compile(r"^[-*]\s+(.*)$")
 RE_OL = re.compile(r"^(\d+)\.\s+(.*)$")
@@ -85,6 +88,40 @@ def parse_to_ast(md: str) -> list[Block]:
                 raise RegionError("region close without a matching open", line_no)
             region_stack.pop()
             idx += 1
+            continue
+
+        if RE_PAGEBREAK.match(stripped):
+            blocks.append(Block(type="pagebreak", region=list(region_stack), line_no=line_no))
+            idx += 1
+            continue
+
+        if RE_HR.match(stripped):
+            blocks.append(Block(type="hr", region=list(region_stack), line_no=line_no))
+            idx += 1
+            continue
+
+        bq = RE_BLOCKQUOTE.match(stripped)
+        if bq:
+            quote_lines = [bq.group(1)]
+            idx += 1
+            while idx < len(lines):
+                nxt = lines[idx].strip()
+                if not nxt:
+                    if idx + 1 < len(lines) and RE_BLOCKQUOTE.match(lines[idx + 1].strip()):
+                        idx += 1
+                        continue
+                    break
+                nxt_bq = RE_BLOCKQUOTE.match(nxt)
+                if not nxt_bq:
+                    break
+                quote_lines.append(nxt_bq.group(1))
+                idx += 1
+            blocks.append(Block(
+                type="blockquote",
+                text="\n".join(quote_lines),
+                region=list(region_stack),
+                line_no=line_no,
+            ))
             continue
 
         if RE_FENCE_OPEN.match(stripped):
@@ -233,9 +270,12 @@ def parse_inline(text: str) -> list[InlineRun]:
                 end = text.find(")", close + 2)
                 if end != -1:
                     flush()
-                    runs.append(InlineRun(
-                        text[i + 1:close], bold, italic, False, url=text[close + 2:end]
-                    ))
+                    label = text[i + 1:close]
+                    url = text[close + 2:end]
+                    for sub in parse_inline(label):
+                        runs.append(InlineRun(
+                            sub.text, sub.bold, sub.italic, sub.code, url=url
+                        ))
                     i = end + 1
                     continue
         if c in "*_":

@@ -7,47 +7,56 @@ description: Use when converting styled Markdown, YAML-frontmatter documents, or
 
 ## Overview
 
-Mark2Word converts a styled Markdown file into a Word `.docx`. Styling lives in YAML frontmatter, external theme files, and named regions — the Markdown body stays readable in any viewer.
+Mark2Word converts styled Markdown into a Word `.docx`. Styling lives in YAML frontmatter, external theme files, and named regions — the Markdown body stays readable in any viewer.
 
-**Supported content**
+### Supported content
 
-- Headings (`#` … `######`)
+- Headings (`#` … `######`) with Word bookmarks for internal links
 - Body paragraphs (one line = one paragraph)
-- Bulleted lists (`-` / `*`) and ordered lists (`1.`) with **nested levels** (2 spaces per indent)
-- Inline **bold**, *italic*, `code`, and [hyperlinks](url)
-- Dual-aligned lines: `Left text || Right text` (ignored inside backticks)
-- Fenced code blocks (` ``` `)
-- Pipe tables
-- Embedded images (`![alt](path.png)`) — paths relative to the Markdown file
-- Named regions: `<!-- region: name -->` … `<!-- /region -->` (nested regions supported)
+- Bulleted (`-` / `*`) and ordered (`1.`) lists with **nested levels** (2 spaces per indent)
+- Blockquotes (`> quoted text`, multi-line)
+- Inline **bold**, *italic*, `code`, and [hyperlinks](url) (emphasis inside links works)
+- Internal links: `[text](#heading-slug)`
+- Dual-aligned lines: `Left || Right` (ignored inside backticks)
+- Fenced code blocks (`` ```lang `` … `` ``` ``)
+- Pipe tables with separator row
+- Images: `![alt](path.png)` (paths relative to the markdown file)
+- Horizontal rules: `---`, `***`, or `___` on their own line (body only; frontmatter stripped first)
+- Named regions: `<!-- region: name -->` … `<!-- /region -->` (nested supported)
+- Page breaks: `<!-- pagebreak -->` (HTML comment, invisible in MD viewers)
 
-**Supported styling**
+### Supported styling
 
-- Global typography, spacing, alignment, borders
-- Per-element targets: `body`, `text`, `heading`, `h1`–`h6`, `list`, `ol`, `ul`, `code`, `table`, `th`, `td`
-- Per-level list numbering and colors via `list` / `ol` / `ul` → `levels`
+- Global typography, spacing, alignment, borders, `indent_left` / `indent_right`
+- Element targets: `body`, `text`, `blockquote`, `code`, `image`, `hr`, `heading`, `h1`–`h6`, `list`, `ol`, `ul`, `table`, `th`, `td`
+- Per-level list numbering and colors via `list` / `ol` / `ul` → `levels` (including zero-padded `01.`)
+- Code per-language overrides: `code.langs.{lang}` matched to fence language tags
+- Image sizing: `width`, `max_width`, `align`, `alt_mode` (`doc` | `caption` | `both` | `none`)
+- Table `border`, cell `padding`, `space_before` / `space_after`
 - Region blocks (`$name`) with nested element overrides
-- Page size (`letter`, `a4`) and margins
+- Page size (`letter`, `a4`), margins, **header/footer** with `{page}`, `{pages}`, `{title}` and `||` dual-align
 - **Chained themes** via `extends` in frontmatter *and* in theme YAML files
+
+Word-only features (frontmatter, HTML comments) do not appear in normal Markdown preview.
 
 ## Resources
 
-- `scripts/mark2word.py` — bundled converter (needs `python-docx` and `pyyaml`)
-- `assets/base-theme.yaml` — default base theme; pass its folder as `--theme-dir` when documents reference `extends: base-theme.yaml`
-- `references/theme-design.md` — full theme authoring guide. Read when creating, editing, or reviewing themes.
-- `docs/examples/showcase.md` — living sample of features (in the mark2Word repo)
+- `scripts/mark2word.py` — bundled converter (`python-docx`, `pyyaml`)
+- `assets/base-theme.yaml` — default base theme; pass as `--theme-dir` when documents use `extends: base-theme.yaml`
+- `references/theme-design.md` — full theme authoring guide (read when creating or editing themes)
+- `docs/examples/showcase.md` — feature demo (in the mark2Word repo)
 
 ## Convert A Document
 
 Prefer the user's project environment when one exists.
 
-**From the mark2Word repo** (recommended when available):
+**From the mark2Word repo:**
 
 ```bash
 uv run mark2word --theme-dir docs/examples path/to/document.md
 ```
 
-**Using the bundled skill script** (absolute paths from any working directory):
+**Bundled skill script** (absolute paths):
 
 ```bash
 python /path/to/mark2word/scripts/mark2word.py \
@@ -56,18 +65,24 @@ python /path/to/mark2word/scripts/mark2word.py \
   /path/to/project/document.docx
 ```
 
-When `output` is omitted, the converter writes `<basename>.docx` beside the input.
+Omit output path to write `<basename>.docx` beside the input.
 
-**Multiple files** — repeat `--input` / `-i`; `--output` must be a directory:
+**Batch:** repeat `-i`; `-o` must be a directory:
 
 ```bash
 uv run mark2word -i a.md -i b.md -o ./out/
 ```
 
-**Validate without writing** (frontmatter, theme chain, Markdown parse):
+**Validate document** (frontmatter, theme chain, markdown parse):
 
 ```bash
 uv run mark2word --check document.md
+```
+
+**Validate theme YAML** (extends chain, page size, list formats, keys):
+
+```bash
+uv run mark2word --check-theme .mark2word/themes/my-theme.yaml --theme-dir .mark2word/themes
 ```
 
 ## CLI Options
@@ -76,56 +91,51 @@ uv run mark2word --check document.md
 |------|---------|
 | `-i` / `--input` | Markdown input (repeat for batch) |
 | `-o` / `--output` | Output `.docx` file or directory |
-| `--theme-dir` | Folder searched for relative `extends` paths (repeatable; first match wins) |
+| `--theme-dir` | Folder for relative `extends` paths (repeatable; first match wins) |
 | `--no-auto-theme-dir` | Skip auto-discovery of `.mark2word/themes` near the input |
-| `--check` | Parse and validate only; no `.docx` written |
+| `--check` | Validate document without writing `.docx` |
+| `--check-theme` | Validate theme YAML (including `extends` chain) |
 | `--verbose` | Warn on ordered-list number mismatches |
+| `-V` / `--version` | Print version |
 
-Exit codes: `0` success, `1` conversion/theme/parse error, `2` usage error.
+Exit codes: `0` success, `1` error, `2` usage error.
 
-The converter checks inputs and outputs **before** building: missing files, unreadable themes, read-only or locked output paths produce clear errors early.
+Inputs, theme chains, and output paths are checked **before** conversion.
 
 ## Theme Resolution
-
-Documents reference a theme in frontmatter:
 
 ```yaml
 ---
 extends: base-theme.yaml
+title: My Report
 font: Calibri
 $header: { align: center }
 ---
 ```
 
-**Search order** for relative `extends` paths:
+**Search order** for relative `extends`:
 
-1. The Markdown file's directory
-2. Each `--theme-dir` folder, in the order provided
+1. Markdown file's directory  
+2. Each `--theme-dir`, in order  
 
-**Auto-discovery:** unless `--no-auto-theme-dir` is set, the converter also searches `.mark2word/themes` in the input file's directory and each parent directory.
+**Auto-discovery:** `.mark2word/themes` near the input and in parent dirs (unless `--no-auto-theme-dir`).
 
-**Chained inheritance:** theme YAML files may also declare `extends`. Parent themes load first; child keys override via deep merge. Example chain (see repo `docs/examples/`):
+**Chained inheritance** in theme files:
 
 ```text
 showcase.md  →  extends: showcase-theme.yaml
 showcase-theme.yaml  →  extends: showcase-base.yaml
 ```
 
-Put shared defaults in the base file; layer document-specific overrides in intermediate or frontmatter keys. Cycles are detected and rejected.
+**Style priority:** defaults → theme chain → frontmatter globals → region path (outer → inner).
 
-**Style priority** (lowest → highest): built-in defaults → external theme chain → frontmatter globals → active region path (outer → inner).
-
-Read `references/theme-design.md` before designing or editing themes.
+Read `references/theme-design.md` before designing themes.
 
 ## Project Local Themes
-
-When a user wants a custom look, create a project folder such as:
 
 ```text
 /path/to/project/.mark2word/themes/my-theme.yaml
 ```
-
-Point the document at it:
 
 ```yaml
 ---
@@ -133,20 +143,16 @@ extends: my-theme.yaml
 ---
 ```
 
-Copy `assets/base-theme.yaml` as a starting point, or chain from it:
-
-```yaml
-extends: base-theme.yaml
-h2: { size: 14, color: "2B579A" }
-```
-
-Always include `--theme-dir` pointing at `assets/` when the chain references `base-theme.yaml` from the skill.
+Copy or chain from `assets/base-theme.yaml`. Include `--theme-dir` for skill `assets/` when the chain references `base-theme.yaml`.
 
 ## Quick Markdown Reference
 
 ```markdown
 ---
 extends: my-theme.yaml
+title: My Doc
+page:
+  footer: "Confidential || Page {page} of {pages}"
 ---
 
 <!-- region: header -->
@@ -156,40 +162,51 @@ Subtitle || contact@example.com
 
 ## Section
 
-Body with **bold**, *italic*, `code`, and [a link](https://example.com).
+See [Overview](#section) for details.
+
+Body with **bold**, *italic*, `code`, and [link](https://example.com).
+
+> Blockquote line one
+> line two
 
 Left side || Right side
 
-- Bullet one
-  - Nested bullet
-1. Ordered one
-   1. Nested ordered (restarts per level)
-2. Ordered two
+- Bullet
+  - Nested
+1. Ordered
+   1. Nested
+2. Continues
 
-| Header | Value |
+| Col A | Col B |
 | - | - |
-| Cell | Data |
+| one | two |
 
 ![Diagram](images/diagram.png)
 
+---
+
 ```python
-# Fenced code block
 print("hello")
 ```
+
+<!-- pagebreak -->
+
+## Next Section
 ```
 
-**List notes:** a body paragraph between list items starts a new list run (ordered numbering restarts). Use `--verbose` to see warnings when markdown numbers skip (e.g. `1.` then `3.`).
+**Lists:** a body paragraph between items starts a new list run (ordered numbering restarts). `--verbose` warns when markdown numbers skip (e.g. `1.` then `3.`).
+
+**Internal links:** slug from heading text (`## My Section` → `#my-section`).
 
 ## Verification
 
-After conversion:
-
-1. Confirm the `.docx` exists and is non-empty.
-2. Open in Word and spot-check headings, nested lists, tables, and any themed regions.
-3. If theme or parse issues are suspected, re-run with `--check`.
+1. Confirm `.docx` exists and is non-empty.  
+2. Spot-check in Word: headings, nested lists, tables, regions, header/footer.  
+3. Re-run with `--check` or `--check-theme` if validation is needed.
 
 **Common fixes**
 
-- `extends references missing theme` — add `--theme-dir` for both skill `assets/` and the project theme folder.
-- Output write errors — close the target file in Word or remove read-only flag; the converter validates writability up front.
-- Missing images — ensure paths are relative to the Markdown file or use absolute paths.
+- Missing theme — add `--theme-dir` for skill `assets/` and project theme folder.  
+- Output write errors — close the file in Word or remove read-only flag.  
+- Missing images — paths relative to the markdown file, or absolute.  
+- Unknown `#anchor` — slug must match an existing heading.

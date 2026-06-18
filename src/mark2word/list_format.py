@@ -15,6 +15,8 @@ _FORMAT_KEYWORDS: list[tuple[str, str, str]] = [
     ("Alph", "upperLetter", "%1."),
     ("decimal", "decimal", "%1."),
     ("bullet", "bullet", "%1"),
+    ("01.", "decimalZero", "%1."),
+    ("01", "decimalZero", "%1"),
     ("1", "decimal", "%1."),
     ("i", "lowerRoman", "%1."),
     ("I", "upperRoman", "%1."),
@@ -24,6 +26,7 @@ _FORMAT_KEYWORDS: list[tuple[str, str, str]] = [
 
 _WORD_NUM_FMTS = {
     "decimal",
+    "decimalZero",
     "lowerLetter",
     "upperLetter",
     "lowerRoman",

@@ -27,6 +27,7 @@ class Block:
     image_alt: str = ""
     image_path: str = ""
     code_lang: str = ""
+    anchor: str = ""
     line_no: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -48,6 +49,8 @@ class Block:
             data["image_path"] = self.image_path
         if self.code_lang:
             data["code_lang"] = self.code_lang
+        if self.anchor:
+            data["anchor"] = self.anchor
         if self.line_no is not None:
             data["line_no"] = self.line_no
         return data
@@ -65,5 +68,6 @@ class Block:
             image_alt=data.get("image_alt", ""),
             image_path=data.get("image_path", ""),
             code_lang=data.get("code_lang", ""),
+            anchor=data.get("anchor", ""),
             line_no=data.get("line_no"),
         )

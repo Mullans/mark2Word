@@ -26,12 +26,14 @@ DEFAULTS: dict[str, Any] = {
 PROP_KEYS = {
     "font", "size", "color", "bold", "italic", "align", "line",
     "space_before", "space_between", "space_after",
-    "indent_left", "indent_hanging", "indent_first_line", "border_bottom",
-    "fill",
+    "indent_left", "indent_right", "indent_hanging", "indent_first_line", "border_bottom",
+    "fill", "width", "max_width", "alt_mode",
 }
 
+IMAGE_ALT_MODES = {"caption", "doc", "both", "none"}
+
 HEADINGS = {f"h{i}" for i in range(1, 7)}
-TEXT_ELEMENTS = {"body", "list", "ol", "ul", "code"}
+TEXT_ELEMENTS = {"body", "list", "ol", "ul", "code", "blockquote", "image", "hr"}
 TABLE_ELEMENTS = {"table", "th", "td"}
 LIST_KINDS = {"list", "ol", "ul"}
 LIST_FORMAT_KEYS = {"format", "num_fmt", "template"}
@@ -240,6 +242,12 @@ def _key_order(element: str) -> list[str]:
         return ["list", element]
     if element in TEXT_ELEMENTS:
         return ["text", element]
+    if element == "image":
+        return ["image"]
+    if element == "blockquote":
+        return ["text", "blockquote"]
+    if element == "hr":
+        return ["hr"]
     if element in TABLE_ELEMENTS:
         if element == "table":
             return ["table"]
@@ -379,4 +387,37 @@ class Resolver:
             style.update({k: v for k, v in level_ov.items() if k in PROP_KEYS})
         for key in ("indent_left", "indent_first_line", "indent_hanging"):
             style.pop(key, None)
+        return style
+
+    def resolve_code_style(
+        self,
+        code_lang: str = "",
+        region_path: tuple[str, ...] | None = None,
+    ) -> dict[str, Any]:
+        style = dict(self.resolve("code", region_path))
+        if not code_lang:
+            return style
+        for layer in self.global_layers:
+            code_block = layer.get("code")
+            if not isinstance(code_block, dict):
+                continue
+            langs = code_block.get("langs")
+            if isinstance(langs, dict) and code_lang in langs:
+                sub = langs[code_lang]
+                if isinstance(sub, dict):
+                    style.update({k: v for k, v in sub.items() if k in PROP_KEYS})
+        for depth in range(1, len(region_path or ()) + 1):
+            prefix = region_path[:depth]
+            for src in self.region_sources:
+                node = self._descend(src, list(prefix))
+                if not isinstance(node, dict):
+                    continue
+                code_block = node.get("code")
+                if not isinstance(code_block, dict):
+                    continue
+                langs = code_block.get("langs")
+                if isinstance(langs, dict) and code_lang in langs:
+                    sub = langs[code_lang]
+                    if isinstance(sub, dict):
+                        style.update({k: v for k, v in sub.items() if k in PROP_KEYS})
         return style

@@ -6,12 +6,13 @@ $pullquote:
 
 <!-- region: header -->
 # mark2word Style Gallery
-A living sample of themed Markdown → Word conversion
+A sample of themed Markdown → Word conversion
 <!-- /region -->
 
 ## Document Purpose
 
-This document demonstrates how mark2word turns a styled Markdown dialect into a polished Word file. Each section highlights a different capability — structure, inline markup, regional theming, lists, tables, code, and images — with deliberate visual contrast between regions.
+This document demonstrates how mark2word can take a Markdown document with a little extra invisible style and make it a polished Word file. For __human work__, it can be an easy way to separate drafting your documents and polishing the style, letting you focus on each separately before you're ready to compile them together into a Word document. For __working with agents__, Markdown provides a simple yet expressive output format, and keeping the style and text separate lets the agent focus on the content of your document rather than writing another Python script or messing with XML.
+Plus, since the styling only uses the front-matter, YAML, or comments, the Markdown files still render in any viewer.
 
 ### Heading Level Three
 

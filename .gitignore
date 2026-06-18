@@ -219,6 +219,7 @@ __marimo__/
 
 docs/smullan_*
 *.docx
+!docs/examples/showcase.docx
 
 # sync-skill copies src/mark2word into this tree (regenerate with uv run sync-skill)
-skills/mark2word/scripts/
+skills/mark2word/scripts/*

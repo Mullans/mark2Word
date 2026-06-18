@@ -2,6 +2,22 @@
 
 A tool to convert Markdown files to Word documents, but with all of the styling thrown in too.
 
+## Installing
+
+Until I set up packaging, just clone the repo, then run `uv sync` from inside it to install the dependencies.
+
+## Running
+
+```bash
+uv run mark2word YOUR_FILE.md
+# Keep your themes in a different directory
+uv run mark2word --theme-dir docs/examples YOUR_FILE.md
+# Specify the output file name (default just swaps extension)
+uv run mark2word --input YOUR_FILE.md --output YOUR_DOC.docx
+# Convert multiple files at once
+uv run mark2word --input FILE1.md --input FILE2.md --output OUT_FOLDER
+```
+
 ## Markdown Elements
 
 - `#` .. `######` - headings (h1..h6)

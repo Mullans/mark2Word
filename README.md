@@ -41,7 +41,7 @@ The converter validates inputs and outputs before building (missing files, theme
 | `#` … `######` | Headings (Word bookmarks for internal links) |
 | Plain line | Body paragraph (one line = one paragraph) |
 | `- item` / `1. item` | Bulleted / numbered lists (native Word multilevel; 2 spaces per nest level) |
-| `> quote` | Blockquote (multi-line with `>` prefix) |
+| `> quote` | Blockquote (shaded cell with optional side borders) |
 | `**b**` `*i*` `` `code` `` | Inline emphasis and code |
 | `[text](url)` | Hyperlink (bold/italic inside link text supported) |
 | `[text](#slug)` | Internal link to a heading bookmark |
@@ -87,8 +87,10 @@ Auto-discovery: unless `--no-auto-theme-dir` is set, `.mark2word/themes` is sear
 | Key | Applies to |
 |-----|------------|
 | `body` | Body paragraphs |
-| `blockquote` | `>` blockquote lines |
-| `code` | Fenced / inline code |
+| `blockquote` | `>` blockquote lines (shaded cell with optional side borders) |
+| `code` | Shared code typography (font, size, color) |
+| `code_block` | Fenced code blocks (` ```lang ` … ` ``` `) |
+| `code_inline` | Inline `` `code` `` backticks |
 | `image` | `![alt](path)` images |
 | `hr` | Horizontal rules |
 | `table`, `th`, `td` | Pipe tables |
@@ -104,14 +106,20 @@ Auto-discovery: unless `--no-auto-theme-dir` is set, `.mark2word/themes` is sear
 - `line` — multiple (e.g. `1.1`) or exact points (`13pt`)
 - `space_before`, `space_after`, `space_between`
 - `indent_left`, `indent_right`, `indent_first_line`, `indent_hanging`
-- `border_bottom` — `{ size: 0.5pt, color: "2B579A" }`
-- `fill` — table cell background (for `th` / `td`)
+- `border_bottom`, `border_left`, `border_right` — `{ size: 0.5pt, color: "2B579A" }` (use `none` to disable)
+- `fill` — background color; use `none` to disable. Applies to table cells (`th`/`td`), fenced code blocks (paragraph shading), inline code (run highlight), and blockquotes (cell background)
+- `padding` — blockquote cell or table cell insets: `{ top, bottom, left, right }` in points or inches
+
+**Blockquote** (under `blockquote`):
+
+- Uses a single-cell table aligned to the text column; `indent_left` / `indent_right` offset the bar from the margin
+- `space_before` is placed above the quote (outside the shaded cell), not inside it
 
 **Image** (under `image`):
 
 - `width`, `max_width` — size in points or inches; `max_width` scales proportionally
-- `align` — caption alignment when alt text is shown
-- `alt_mode` — `doc` (Word accessibility, default), `caption`, `both`, `none`
+- `align` — paragraph alignment for the image (and caption when shown)
+- `alt_mode` — `doc` (Word accessibility metadata, default), `caption` (visible caption paragraph), `both`, `none`
 
 **Table** (under `table`, `th`, or `td`):
 
@@ -119,16 +127,22 @@ Auto-discovery: unless `--no-auto-theme-dir` is set, `.mark2word/themes` is sear
 - `padding` — on `th`/`td`: `{ top: 4pt, bottom: 4pt, left: 6pt, right: 6pt }`
 - `space_before`, `space_after` — on `table`
 
-**Code** per-language overrides (fence language tag matches key):
+**Code** — shared typography under `code`; block-specific keys under `code_block` and `code_inline`. Per-language overrides match the fence language tag:
 
 ```yaml
 code:
   font: Consolas
   size: 9
+code_block:
+  fill: "F5F5F5"
   langs:
     python: { color: "000080" }
     yaml: { color: "008080" }
+code_inline:
+  fill: "F5F5F5"
 ```
+
+Built-in defaults (`defaults.yaml`) supply baseline code fills, blockquote styling, and list indents; override in themes or frontmatter as needed.
 
 ### List numbering
 
@@ -175,11 +189,11 @@ page:
 
 Header/footer placeholders: `{page}`, `{pages}`, `{title}`. Use `left || right` for dual-aligned lines.
 
-Theme page chrome is document-wide. Content footers in the markdown body (e.g. a `$footer` region) are separate.
+Theme page chrome is document-wide. Content footers in the markdown body (e.g. a `$footer-region` region) are separate from `page.footer`.
 
 ### Regions
 
-Define `$region-name` in frontmatter or theme, then wrap markdown:
+Define `$region-name` in frontmatter or theme, then wrap markdown. Top-level region keys (`font`, `color`, …) apply to body text inside the region; nested keys like `body` or `h2` target specific elements.
 
 ```markdown
 <!-- region: callout -->
@@ -191,12 +205,12 @@ Nested regions supported; inner overrides beat outer.
 
 ### Style priority
 
-1. Built-in defaults  
+1. Built-in defaults (`src/mark2word/defaults.yaml`) — always merged first  
 2. External theme chain (`extends`)  
 3. Frontmatter globals  
-4. Active region path (outer → inner)  
+4. Active region path (outer → inner; regions use theme + frontmatter only, not built-in defaults)  
 
-Within a layer: `h2` beats `heading`, `body` beats `text`, `ol`/`ul` beat `list`.
+Within a layer, later keys override earlier: top-level props → category → subcategory (e.g. `code` → `code_block`, `heading` → `h2`, `text` → `body`). Region top-level keys (`font`, `size`, `color`, …) apply to all elements in that region, including body paragraphs.
 
 ## Example
 

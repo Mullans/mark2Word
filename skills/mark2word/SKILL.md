@@ -27,13 +27,15 @@ Mark2Word converts styled Markdown into a Word `.docx`. Styling lives in YAML fr
 
 ### Supported styling
 
-- Global typography, spacing, alignment, borders, `indent_left` / `indent_right`
-- Element targets: `body`, `text`, `blockquote`, `code`, `image`, `hr`, `heading`, `h1`–`h6`, `list`, `ol`, `ul`, `table`, `th`, `td`
+- Global typography, spacing, alignment, borders (`border_bottom`, `border_left`, `border_right`), `indent_left` / `indent_right`
+- Element targets: `body`, `text`, `blockquote`, `code`, `code_block`, `code_inline`, `image`, `hr`, `heading`, `h1`–`h6`, `list`, `ol`, `ul`, `table`, `th`, `td`
+- **Built-in defaults** (`defaults.yaml`) merged under every theme — code fills, blockquote bar styling, list indents
+- **Background fills** — table cells, fenced code (paragraph shading), inline code (run highlight), blockquotes (cell); set `fill: none` to disable
 - Per-level list numbering and colors via `list` / `ol` / `ul` → `levels` (including zero-padded `01.`)
-- Code per-language overrides: `code.langs.{lang}` matched to fence language tags
-- Image sizing: `width`, `max_width`, `align`, `alt_mode` (`doc` | `caption` | `both` | `none`)
+- Code per-language overrides: `code_block.langs.{lang}` or `code.langs.{lang}` matched to fence language tags
+- Image sizing and alt: `width`, `max_width`, `align`, `alt_mode` (`doc` writes Word accessibility metadata; `caption`/`both` add visible text)
 - Table `border`, cell `padding`, `space_before` / `space_after`
-- Region blocks (`$name`) with nested element overrides
+- Region blocks (`$name`) with top-level props plus nested element overrides (`body`, `h2`, `table`, …)
 - Page size (`letter`, `a4`), margins, **header/footer** with `{page}`, `{pages}`, `{title}` and `||` dual-align
 - **Chained themes** via `extends` in frontmatter *and* in theme YAML files
 
@@ -42,8 +44,8 @@ Word-only features (frontmatter, HTML comments) do not appear in normal Markdown
 ## Resources
 
 - `scripts/mark2word.py` — bundled converter (`python-docx`, `pyyaml`)
-- `assets/base-theme.yaml` — default base theme; pass as `--theme-dir` when documents use `extends: base-theme.yaml`
-- `references/theme-design.md` — full theme authoring guide (read when creating or editing themes)
+- `assets/base-theme.yaml` — starter theme; pass as `--theme-dir` when documents use `extends: base-theme.yaml` (built-in defaults apply even without this file)
+- `references/theme-design.md` — theme authoring reference (read when creating, editing, or substantially customizing themes)
 - `docs/examples/showcase.md` — feature demo (in the mark2Word repo)
 
 ## Convert A Document
@@ -115,8 +117,8 @@ $header: { align: center }
 
 **Search order** for relative `extends`:
 
-1. Markdown file's directory  
-2. Each `--theme-dir`, in order  
+1. Markdown file's directory
+2. Each `--theme-dir`, in order
 
 **Auto-discovery:** `.mark2word/themes` near the input and in parent dirs (unless `--no-auto-theme-dir`).
 
@@ -127,9 +129,7 @@ showcase.md  →  extends: showcase-theme.yaml
 showcase-theme.yaml  →  extends: showcase-base.yaml
 ```
 
-**Style priority:** defaults → theme chain → frontmatter globals → region path (outer → inner).
-
-Read `references/theme-design.md` before designing themes.
+**Style priority:** built-in defaults → theme chain → frontmatter globals → region path (outer → inner). Within each layer: top-level props, then category chains (`code` → `code_block`, `heading` → `h2`, `text` → `body`). Region top-level `font`/`size`/`color` apply to body text inside that region. Details: `references/theme-design.md`.
 
 ## Project Local Themes
 
@@ -200,13 +200,13 @@ print("hello")
 
 ## Verification
 
-1. Confirm `.docx` exists and is non-empty.  
-2. Spot-check in Word: headings, nested lists, tables, regions, header/footer.  
-3. Re-run with `--check` or `--check-theme` if validation is needed.
+1. Confirm `.docx` exists and is non-empty.
+2. Re-run with `--check` or `--check-theme` if validation is needed.
+
+Do not open or manually inspect the `.docx` — rely on CLI success and validation flags.
 
 **Common fixes**
 
-- Missing theme — add `--theme-dir` for skill `assets/` and project theme folder.  
-- Output write errors — close the file in Word or remove read-only flag.  
-- Missing images — paths relative to the markdown file, or absolute.  
+- Missing theme — add `--theme-dir` for skill `assets/` and project theme folder.
+- Missing images — paths relative to the markdown file, or absolute.
 - Unknown `#anchor` — slug must match an existing heading.

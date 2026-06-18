@@ -5,6 +5,7 @@ from mark2word.cli import convert_one, main, resolve_output_path, validate_docum
 from mark2word.emit import build
 from mark2word.errors import (
     FrontmatterError,
+    ImageError,
     Mark2WordError,
     ParseError,
     RegionError,
@@ -12,7 +13,7 @@ from mark2word.errors import (
 )
 from mark2word.parser import parse_blocks, parse_inline, parse_to_ast
 from mark2word.paths import ensure_input_readable, ensure_output_writable
-from mark2word.plugins import register_block_emitter, register_block_parser
+from mark2word.plugins import register_block_emitter, register_block_parser, reset_plugins
 from mark2word.theme import (
     Resolver,
     deep_merge,
@@ -25,6 +26,7 @@ from mark2word.theme import (
 __all__ = [
     "Block",
     "FrontmatterError",
+    "ImageError",
     "InlineRun",
     "Mark2WordError",
     "ParseError",
@@ -45,6 +47,7 @@ __all__ = [
     "parse_to_ast",
     "register_block_emitter",
     "register_block_parser",
+    "reset_plugins",
     "resolve_output_path",
     "split_frontmatter",
     "validate_document",

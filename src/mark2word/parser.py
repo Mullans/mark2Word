@@ -110,10 +110,17 @@ def parse_to_ast(md: str) -> list[Block]:
 
         if _is_table_row(stripped) and idx + 1 < len(lines) and RE_TABLE_SEP.match(lines[idx + 1].strip()):
             row = _split_table_row(stripped)
+            col_count = len(row)
             idx += 2
             rows = [row]
             while idx < len(lines) and _is_table_row(lines[idx]):
-                rows.append(_split_table_row(lines[idx]))
+                next_row = _split_table_row(lines[idx])
+                if len(next_row) != col_count:
+                    raise ParseError(
+                        f"table row has {len(next_row)} columns, expected {col_count}",
+                        idx + 1,
+                    )
+                rows.append(next_row)
                 idx += 1
             blocks.append(Block(
                 type="table",

@@ -28,3 +28,9 @@ def block_parsers() -> list[BlockParser]:
 
 def block_emitter(block_type: str) -> BlockEmitter | None:
     return _block_emitters.get(block_type)
+
+
+def reset_plugins() -> None:
+    """Clear registered parsers and emitters (for test isolation)."""
+    _block_parsers.clear()
+    _block_emitters.clear()

@@ -117,7 +117,10 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     m = FRONTMATTER_RE.match(text)
     if not m:
         return {}, text
-    parsed = yaml.safe_load(m.group(1))
+    try:
+        parsed = yaml.safe_load(m.group(1))
+    except yaml.YAMLError as exc:
+        raise FrontmatterError(f"invalid YAML in frontmatter: {exc}") from exc
     body = m.group(2)
     if parsed is None:
         return {}, body
@@ -159,7 +162,7 @@ def _load_theme_file(
     ext_path = next((path for path in checked if path.exists()), None)
     if ext_path is None:
         searched = ", ".join(str(path) for path in checked)
-        raise FileNotFoundError(f"extends references missing theme: {ext}; searched: {searched}")
+        raise ThemeError(f"extends references missing theme: {ext}; searched: {searched}")
     if ext_path in seen:
         raise ThemeError(f"theme inheritance cycle detected at: {ext_path}")
     seen.add(ext_path)

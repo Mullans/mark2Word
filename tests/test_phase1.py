@@ -22,6 +22,7 @@ from mark2word import (
 )
 from mark2word.cli import main, resolve_output_path, validate_document
 from mark2word.parser import split_dual_align
+from mark2word.plugins import reset_plugins
 from mark2word.theme import discover_theme_dirs
 
 
@@ -522,6 +523,7 @@ class Tier4Tests(unittest.TestCase):
             return None
 
         register_block_parser(parse_banner, prepend=True)
+        self.addCleanup(reset_plugins)
         blocks = parse_blocks("!!! Banner text\n")
         self.assertEqual(blocks[0]["text"], "Banner text")
 

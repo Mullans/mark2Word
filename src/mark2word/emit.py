@@ -18,6 +18,7 @@ from docx.shared import Pt, RGBColor, Twips
 from mark2word.ast import Block, InlineRun
 from mark2word.lists import apply_list_numbering
 from mark2word.parser import parse_inline, parse_to_ast, split_dual_align
+from mark2word.errors import ImageError, ThemeError
 from mark2word.plugins import block_emitter
 from mark2word.theme import (
     HEADINGS,
@@ -39,6 +40,22 @@ ALIGN = {
     "right": WD_ALIGN_PARAGRAPH.RIGHT,
     "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
 }
+
+
+def _resolve_image_path(block: dict[str, Any], md_path: Path | None) -> Path:
+    image_path = Path(block["image_path"])
+    if not image_path.is_absolute() and md_path is not None:
+        image_path = md_path.parent / image_path
+    return image_path
+
+
+def _insert_image(paragraph, image_path: Path, *, line_no: int | None) -> None:
+    if not image_path.is_file():
+        raise ImageError(f"image not found: {image_path}", line_no)
+    try:
+        paragraph.add_run().add_picture(str(image_path))
+    except OSError as exc:
+        raise ImageError(f"cannot read image: {image_path}", line_no) from exc
 
 
 def apply_paragraph_style(paragraph, style: dict[str, Any]) -> None:
@@ -240,11 +257,8 @@ def emit_paragraph(
     pf = p.paragraph_format
 
     if block_type == "image":
-        image_path = Path(block["image_path"])
-        if not image_path.is_absolute() and md_path is not None:
-            image_path = md_path.parent / image_path
-        run = p.add_run()
-        run.add_picture(str(image_path))
+        image_path = _resolve_image_path(block, md_path)
+        _insert_image(p, image_path, line_no=block.get("line_no"))
         return p, None
 
     if block_type == "code":
@@ -420,7 +434,7 @@ def build(
     sec = doc.sections[0]
     size_key = str(page.get("size", "letter")).lower()
     if size_key not in PAGE_SIZES:
-        raise ValueError(f"Unknown page size: `{page.get('size')}`")
+        raise ThemeError(f"unknown page size: {page.get('size')!r}")
     sec.page_width, sec.page_height = PAGE_SIZES[size_key]
     margin = page.get("margin", {})
     sec.top_margin = to_length(margin.get("top", "0.5in"))

@@ -33,3 +33,14 @@ class ParseError(Mark2WordError, ValueError):
             super().__init__(message)
         else:
             super().__init__(f"line {line_no}: {message}")
+
+
+class ImageError(Mark2WordError, ValueError):
+    """Missing or unreadable image reference."""
+
+    def __init__(self, message: str, line_no: int | None = None):
+        self.line_no = line_no
+        if line_no is None:
+            super().__init__(message)
+        else:
+            super().__init__(f"line {line_no}: {message}")

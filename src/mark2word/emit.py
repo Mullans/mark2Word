@@ -9,21 +9,29 @@ from typing import Any
 
 from docx import Document
 from docx.enum.style import WD_STYLE_TYPE
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
-from docx.shared import Pt, Twips
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.shared import Pt
 
 from mark2word.ast import Block
 from mark2word.errors import ImageError, ParseError, ThemeError
 from mark2word.lists import apply_list_numbering
 from mark2word.oxml_helpers import (
     add_bookmark,
+    add_dual_align_tab,
     add_hyperlink as oxml_add_hyperlink,
     add_page_break,
+    clear_table_borders,
+    prepare_dual_align_paragraph,
+    set_cell_borders,
     set_cell_margins,
     set_cell_shading,
     set_paragraph_border_bottom,
+    set_paragraph_shading,
+    set_run_shading,
+    set_style_paragraph_shading,
     set_image_alt,
     set_table_borders,
+    set_table_layout,
 )
 from mark2word.parser import parse_inline, parse_to_ast, split_dual_align
 from mark2word.plugins import block_emitter
@@ -34,15 +42,18 @@ from mark2word.theme import (
     PAGE_SIZES,
     NumberingConfig,
     Resolver,
+    border_enabled,
+    border_width_twips,
     deep_merge,
+    fill_enabled,
     hex_color,
+    length_to_twips,
     pt_value,
     to_length,
 )
 
 MARK2WORD_BODY = "Mark2word Body"
-MARK2WORD_CODE = "Mark2word Code"
-MARK2WORD_BLOCKQUOTE = "Mark2word Blockquote"
+MARK2WORD_CODE_BLOCK = "Mark2word Code Block"
 
 ALIGN = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -114,9 +125,11 @@ def apply_paragraph_style(paragraph, style: dict[str, Any]) -> None:
         pf.first_line_indent = -to_length(style["indent_hanging"])
     if style.get("border_bottom"):
         set_paragraph_border_bottom(paragraph, style["border_bottom"])
+    if fill_enabled(style.get("fill")):
+        set_paragraph_shading(paragraph, style["fill"])
 
 
-def apply_run_style(run, style: dict[str, Any]) -> None:
+def apply_run_style(run, style: dict[str, Any], *, inline_code: bool = False) -> None:
     if style.get("font"):
         run.font.name = style["font"]
     if style.get("size") is not None:
@@ -127,6 +140,8 @@ def apply_run_style(run, style: dict[str, Any]) -> None:
         run.bold = style["bold"]
     if style.get("italic") is not None:
         run.italic = style["italic"]
+    if inline_code and fill_enabled(style.get("fill")):
+        set_run_shading(run, style["fill"])
 
 
 def add_runs(
@@ -134,12 +149,21 @@ def add_runs(
     segment: str,
     style: dict[str, Any],
     *,
+    inline_code_style: dict[str, Any] | None = None,
     code_style: dict[str, Any] | None = None,
     anchors: set[str] | None = None,
     inherit_paragraph_style: bool = False,
 ) -> None:
     for run in parse_inline(segment):
-        active = code_style if run.code and code_style else style
+        if run.code and inline_code_style is not None:
+            active = inline_code_style
+            use_inline = True
+        elif run.code and code_style is not None:
+            active = code_style
+            use_inline = False
+        else:
+            active = style
+            use_inline = False
         if run.url:
             if run.url.startswith("#"):
                 anchor = run.url[1:]
@@ -159,7 +183,7 @@ def add_runs(
             paragraph.add_run(run.text)
             continue
         r = paragraph.add_run(run.text)
-        apply_run_style(r, active)
+        apply_run_style(r, active, inline_code=use_inline)
         if run.bold:
             r.bold = True
         if run.italic:
@@ -183,6 +207,8 @@ def _ensure_paragraph_style(doc: Document, name: str, base_name: str, resolved: 
         style.font.italic = resolved["italic"]
     style.paragraph_format.space_before = Pt(0)
     style.paragraph_format.space_after = Pt(0)
+    if fill_enabled(resolved.get("fill")):
+        set_style_paragraph_shading(style, resolved["fill"])
 
 
 def configure_document_styles(doc: Document, resolver: Resolver) -> None:
@@ -196,8 +222,9 @@ def configure_document_styles(doc: Document, resolver: Resolver) -> None:
     normal.paragraph_format.space_after = Pt(0)
 
     _ensure_paragraph_style(doc, MARK2WORD_BODY, "Normal", base)
-    _ensure_paragraph_style(doc, MARK2WORD_CODE, "Normal", resolver.resolve("code"))
-    _ensure_paragraph_style(doc, MARK2WORD_BLOCKQUOTE, "Normal", resolver.resolve("blockquote"))
+    _ensure_paragraph_style(
+        doc, MARK2WORD_CODE_BLOCK, "Normal", resolver.resolve("code_block"),
+    )
 
     for level in range(1, 7):
         element = f"h{level}"
@@ -250,6 +277,7 @@ def emit_paragraph(
     verbose: bool = False,
     md_path: Path | None = None,
     code_style: dict[str, Any] | None = None,
+    inline_code_style: dict[str, Any] | None = None,
     anchors: set[str] | None = None,
     bookmark_id: int | None = None,
 ):
@@ -283,9 +311,7 @@ def emit_paragraph(
             numbering_config=numbering_config,
         )
     elif block_type == "code":
-        p = doc.add_paragraph(style=MARK2WORD_CODE)
-    elif block_type == "blockquote":
-        p = doc.add_paragraph(style=MARK2WORD_BLOCKQUOTE)
+        p = doc.add_paragraph(style=MARK2WORD_CODE_BLOCK)
     elif block_type == "hr":
         p = doc.add_paragraph(style=MARK2WORD_BODY)
         if "border_bottom" not in style:
@@ -315,35 +341,105 @@ def emit_paragraph(
         return p, None
 
     if block_type == "code":
-        for line in block.get("text", "").splitlines() or [""]:
-            r = p.add_run(line + "\n")
-            apply_run_style(r, code_style or style)
+        lines = block.get("text", "").splitlines() or [""]
+        if len(lines) == 1:
+            apply_run_style(p.add_run(lines[0]), code_style or style)
+        else:
+            for line in lines:
+                apply_run_style(p.add_run(line + "\n"), code_style or style)
         return p, None
 
-    if block_type == "blockquote":
-        for line in block.get("text", "").splitlines() or [""]:
-            add_runs(
-                p, line, style, code_style=code_style, anchors=anchors,
-                inherit_paragraph_style=True,
-            )
-            if line != block.get("text", "").splitlines()[-1]:
-                p.add_run("\n")
-        return p, None
-
-    inherit = block_type in {"body", "blockquote"} and not block_type.startswith("h")
+    # Outside regions, body runs inherit Mark2word Body; inside a region, apply
+    # resolved run props (region top-level font/size/color + nested body keys).
+    inherit = block_type == "body" and not block.get("region")
     parts = split_dual_align(block.get("text", ""))
     if parts is not None:
         left, right = parts
-        pf.tab_stops.add_tab_stop(Twips(content_width_twips), WD_TAB_ALIGNMENT.RIGHT)
-        add_runs(p, left, style, code_style=code_style, anchors=anchors, inherit_paragraph_style=inherit)
-        p.add_run().add_tab()
-        add_runs(p, right, style, code_style=code_style, anchors=anchors, inherit_paragraph_style=inherit)
+        prepare_dual_align_paragraph(p, content_width_twips)
+        add_runs(p, left, style, code_style=code_style, inline_code_style=inline_code_style, anchors=anchors, inherit_paragraph_style=inherit)
+        add_dual_align_tab(p)
+        add_runs(p, right, style, code_style=code_style, inline_code_style=inline_code_style, anchors=anchors, inherit_paragraph_style=inherit)
     else:
         add_runs(
-            p, block.get("text", ""), style, code_style=code_style, anchors=anchors,
+            p, block.get("text", ""), style, code_style=code_style, inline_code_style=inline_code_style, anchors=anchors,
             inherit_paragraph_style=inherit,
         )
     return p, list_num_id
+
+
+def _blockquote_cell_padding(style: dict[str, Any]) -> dict[str, Any]:
+    padding = style.get("padding")
+    return dict(padding) if isinstance(padding, dict) else {}
+
+
+def _blockquote_table_layout(
+    style: dict[str, Any],
+    content_width_twips: int,
+) -> tuple[int, int]:
+    """
+    Table indent and width so the blockquote spans the text column.
+
+    indent = theme indent_left + cell padding-left + left border width
+    width  = content_width - indent + cell padding-right
+    """
+    padding = _blockquote_cell_padding(style)
+    cell_left = length_to_twips(padding.get("left", "0.1in"))
+    cell_right = length_to_twips(padding.get("right", "0.1in"))
+    user_indent = length_to_twips(style.get("indent_left"))
+    border_left = style.get("border_left")
+    border_twips = border_width_twips(border_left) if border_enabled(border_left) else 0
+    table_indent = user_indent + cell_left + border_twips
+    table_width = content_width_twips - table_indent + cell_right
+    return table_indent, max(0, table_width)
+
+
+def _blockquote_border_spec(style: dict[str, Any]) -> dict[str, Any]:
+    spec: dict[str, Any] = {}
+    for edge in ("left", "right"):
+        cfg = style.get(f"border_{edge}")
+        if border_enabled(cfg):
+            spec[edge] = cfg
+    return spec
+
+
+def emit_blockquote(
+    doc: Document,
+    block: dict[str, Any],
+    style: dict[str, Any],
+    content_width_twips: int,
+    *,
+    inline_code_style: dict[str, Any] | None = None,
+    anchors: set[str] | None = None,
+    bookmark_id: int | None = None,
+) -> Any:
+    """Blockquote as a single-cell table aligned to the document text column."""
+    table = doc.add_table(rows=1, cols=1)
+    clear_table_borders(table)
+    table_indent, table_width = _blockquote_table_layout(style, content_width_twips)
+    set_table_layout(table, indent_twips=table_indent, width_twips=table_width)
+    cell = table.rows[0].cells[0]
+    if fill_enabled(style.get("fill")):
+        set_cell_shading(cell, style["fill"])
+    set_cell_borders(cell, _blockquote_border_spec(style))
+    padding = _blockquote_cell_padding(style)
+    if padding:
+        set_cell_margins(cell, padding)
+    p = cell.paragraphs[0]
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(0)
+    if block.get("anchor") and bookmark_id is not None:
+        add_bookmark(p, bookmark_id, block["anchor"])
+    lines = block.get("text", "").splitlines() or [""]
+    for i, line in enumerate(lines):
+        if i > 0:
+            p.add_run("\n")
+        add_runs(
+            p, line, style,
+            inline_code_style=inline_code_style,
+            anchors=anchors,
+            inherit_paragraph_style=True,
+        )
+    return table
 
 
 def emit_table(doc, block: dict[str, Any], resolver: Resolver) -> Any:
@@ -363,7 +459,7 @@ def emit_table(doc, block: dict[str, Any], resolver: Resolver) -> Any:
             element = "th" if r_idx == 0 else "td"
             cell_style = resolver.resolve(element, region)
             merged = {**table_style, **cell_style}
-            if merged.get("fill"):
+            if fill_enabled(merged.get("fill")):
                 set_cell_shading(cell, merged["fill"])
             padding = merged.get("padding")
             if isinstance(padding, dict):
@@ -373,11 +469,23 @@ def emit_table(doc, block: dict[str, Any], resolver: Resolver) -> Any:
     return table
 
 
+def _is_blockquote_table(item: FlowItem) -> bool:
+    return item.kind == "table" and item.block.get("type") == "blockquote"
+
+
 def realize_flow_spacing(items: list[FlowItem]) -> None:
     for idx, item in enumerate(items):
         before = pt_value(item.style.get("space_before", 0))
         if idx == 0:
-            _apply_space_before(item, before)
+            # No preceding block: must place leading space on the item itself.
+            # Blockquote tables keep space out of the shaded cell when possible;
+            # at document start there is no predecessor, so this one case stays
+            # on the first in-cell paragraph.
+            if before > 0:
+                if _is_blockquote_table(item):
+                    _apply_blockquote_cell_space_before(item, before)
+                else:
+                    _apply_space_before(item, before)
             continue
         prev = items[idx - 1]
         same_list = (
@@ -389,16 +497,28 @@ def realize_flow_spacing(items: list[FlowItem]) -> None:
             gap = pt_value(item.style.get("space_between", prev.style.get("space_between", 0)))
         else:
             gap = max(pt_value(prev.style.get("space_after", 0)), before)
-        _apply_space_after(prev, 0)
-        _apply_space_before(item, gap)
+        if _is_blockquote_table(item):
+            # Move blockquote space_before to the preceding block's space_after so
+            # the gap sits above the table, not inside the shaded cell.
+            _apply_space_after(prev, gap)
+        else:
+            _apply_space_after(prev, 0)
+            _apply_space_before(item, gap)
     if items:
         _apply_space_after(items[-1], pt_value(items[-1].style.get("space_after", 0)))
 
 
 def _apply_space_before(item: FlowItem, pt: float) -> None:
+    if _is_blockquote_table(item):
+        return
     if item.kind == "paragraph":
         item.element.paragraph_format.space_before = Pt(pt)
     elif item.kind == "table" and item.element.rows:
+        item.element.rows[0].cells[0].paragraphs[0].paragraph_format.space_before = Pt(pt)
+
+
+def _apply_blockquote_cell_space_before(item: FlowItem, pt: float) -> None:
+    if item.kind == "table" and item.element.rows:
         item.element.rows[0].cells[0].paragraphs[0].paragraph_format.space_before = Pt(pt)
 
 
@@ -457,15 +577,34 @@ def emit_from_ast(
                 int(data.get("list_level", 0)), region, ordered=is_ordered,
             )
         elif block_type == "code":
-            style = resolver.resolve("code", region)
+            style = resolver.resolve("code_block", region)
         elif block_type == "image":
             style = resolver.resolve("image", region)
         else:
             style = resolver.resolve(block_type, region)
 
+        inline_code_style = resolver.resolve_code_inline_style(region)
         code_style = None
         if block_type == "code":
-            code_style = resolver.resolve_code_style(data.get("code_lang", ""), region)
+            code_style = resolver.resolve_code_block_style(data.get("code_lang", ""), region)
+
+        if block_type == "blockquote":
+            bookmark_id = None
+            if data.get("anchor"):
+                bookmark_id = bookmark_seq
+                bookmark_seq += 1
+            table = emit_blockquote(
+                doc, data, style, content_width_twips,
+                inline_code_style=inline_code_style,
+                anchors=anchors,
+                bookmark_id=bookmark_id,
+            )
+            flow.append(FlowItem("table", table, data, style))
+            prev_list_p = None
+            prev_list_ordered = None
+            list_run_num_id = None
+            ol_expected.clear()
+            continue
 
         expected = None
         same_list_run = (
@@ -484,6 +623,36 @@ def emit_from_ast(
             expected = ol_expected[level]
             ol_expected[level] = expected + 1
 
+        if block_type == "code" and fill_enabled(style.get("fill")):
+            lines = data.get("text", "").splitlines() or [""]
+            if len(lines) > 1:
+                bookmark_id = None
+                if data.get("anchor"):
+                    bookmark_id = bookmark_seq
+                    bookmark_seq += 1
+                for i, line in enumerate(lines):
+                    line_style = {**style}
+                    if i > 0:
+                        line_style["space_before"] = 0
+                    if i < len(lines) - 1:
+                        line_style["space_after"] = 0
+                    line_block = {**data, "text": line}
+                    p, _ = emit_paragraph(
+                        doc, line_block, line_style, content_width_twips,
+                        verbose=verbose,
+                        md_path=md_path,
+                        code_style=code_style,
+                        inline_code_style=inline_code_style,
+                        anchors=anchors,
+                        bookmark_id=bookmark_id if i == 0 else None,
+                    )
+                    flow.append(FlowItem("paragraph", p, data, line_style))
+                prev_list_p = None
+                prev_list_ordered = None
+                list_run_num_id = None
+                ol_expected.clear()
+                continue
+
         bookmark_id = None
         if data.get("anchor"):
             bookmark_id = bookmark_seq
@@ -498,6 +667,7 @@ def emit_from_ast(
             verbose=verbose,
             md_path=md_path,
             code_style=code_style,
+            inline_code_style=inline_code_style,
             anchors=anchors,
             bookmark_id=bookmark_id,
         )

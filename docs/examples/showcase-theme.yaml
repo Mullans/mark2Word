@@ -1,16 +1,17 @@
-# Showcase theme for mark2word — demonstrates global, element, table, code,
-# and region styling. Loaded via `extends: showcase-theme.yaml` in the sample
-# markdown frontmatter.
+# Showcase theme for mark2word — global, element, table, code, page chrome, and
+# region styling. Loaded via `extends: showcase-theme.yaml` in showcase.md.
 
 extends: showcase-base.yaml
 
 page:
   size: letter
   margin:
-    top: 0.6in
-    bottom: 0.6in
-    left: 0.75in
-    right: 0.75in
+    top: 0.75in
+    bottom: 0.65in
+    left: 0.65in
+    right: 0.65in
+  header: "mark2word || {title}"
+  footer: "Style Gallery · showcase.md || Page {page} of {pages}"
 
 font: Calibri
 size: 11
@@ -28,11 +29,49 @@ list:
   space_after: 6pt
   indent_left: 14pt
   indent_hanging: 14pt
+  indent_step: 14pt
+
+ol:
+  levels:
+    0: { format: "1." }
+    1: { format: "a." }
+    2: { format: "i." }
+
+ul:
+  levels:
+    0: { num_fmt: bullet, template: "*" }
+    1: { num_fmt: bullet, template: "o" }
+    2: { num_fmt: bullet, template: "-" }
+
+blockquote:
+  space_before: 6pt
+  space_after: 6pt
+  color: "404040"
+  italic: true
+
+hr:
+  border_bottom: { size: 0.75pt, color: "2B579A" }
+  space_before: 14pt
+  space_after: 14pt
 
 code:
   font: Consolas
   size: 9
   color: "1F497D"
+
+code_block:
+  langs:
+    python: { color: "000080" }
+    yaml: { color: "006666" }
+    bash: { color: "333333" }
+
+code_inline:
+  color: "1F497D"
+
+image:
+  max_width: 4in
+  alt_mode: doc
+  align: center
 
 heading:
   bold: true
@@ -47,9 +86,7 @@ h2:
   size: 16
   space_before: 16pt
   space_after: 6pt
-  border_bottom:
-    size: 0.75pt
-    color: "2B579A"
+  border_bottom: { size: 0.75pt, color: "2B579A" }
 
 h3:
   size: 13
@@ -73,21 +110,26 @@ h6:
 table:
   font: Calibri
   size: 10
+  space_before: 8pt
+  space_after: 8pt
+  border: { size: 0.5pt, color: "B4C6E7" }
 
 th:
   bold: true
   color: "FFFFFF"
   fill: "2B579A"
   align: center
+  padding: { top: 6pt, bottom: 6pt, left: 8pt, right: 8pt }
 
 td:
   size: 10
+  padding: { top: 4pt, bottom: 4pt, left: 8pt, right: 8pt }
 
-$header:
+$header-region:
   align: center
   font: Aptos
   h1:
-    size: 26
+    size: 28
     color: "1F497D"
     space_after: 2pt
   body:
@@ -101,10 +143,18 @@ $pullquote:
   italic: true
   body:
     align: center
-    space_before: 8pt
-    space_after: 8pt
-    indent_left: 24pt
-    indent_right: 24pt
+    space_before: 10pt
+    space_after: 10pt
+    indent_left: 28pt
+    indent_right: 28pt
+
+$feature-grid:
+  table:
+    space_before: 4pt
+  th:
+    fill: "1F497D"
+  td:
+    size: 9
 
 $theme-sample:
   font: Calibri
@@ -135,14 +185,22 @@ $theme-sample2:
 $theme-list-sample:
   list:
     levels:
-      0: {color: "#943634"}
-      1: {color: 028010}
-      2: {color: 1F4E79}
+      0: { color: "943634" }
+      1: { color: "028010" }
+      2: { color: "1F4E79" }
 
-$footer:
+$appendix:
+  ol:
+    levels:
+      0: { format: "01." }
+  body:
+    size: 10
+    color: "404040"
+
+$footer-region:
   align: center
   font: Calibri
   size: 8
   color: "7F7F7F"
   body:
-    space_before: 10pt
+    space_before: 12pt

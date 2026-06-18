@@ -5,11 +5,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from docx.enum.text import WD_TAB_ALIGNMENT
-from docx.shared import Twips
-
-from mark2word.oxml_helpers import add_field, add_run_text, paragraph_element
+from mark2word.oxml_helpers import (
+    add_dual_align_tab,
+    add_field,
+    add_run_text,
+    clear_style_tab_stops,
+    paragraph_element,
+    prepare_dual_align_paragraph,
+)
 from mark2word.parser import split_dual_align
+
+# Word's default Header/Footer styles add center/right tabs that stack with paragraph tabs.
+_WORD_CHROME_TAB_STOPS = (4680, 9360)
 
 _PLACEHOLDER = re.compile(r"\{page\}|\{pages\}|\{title\}")
 
@@ -25,6 +32,7 @@ def configure_page_chrome(
     footer = page.get("footer")
     if not header and not footer:
         return
+    clear_style_tab_stops(doc, "Header", "Footer")
     sec = doc.sections[0]
     meta = {"title": doc_title}
     if header:
@@ -42,10 +50,11 @@ def _apply_chrome_slot(container, cfg, meta: dict[str, str], content_width_twips
     parts = split_dual_align(text)
     if parts:
         left, right = parts
-        pf = p.paragraph_format
-        pf.tab_stops.add_tab_stop(Twips(content_width_twips), WD_TAB_ALIGNMENT.RIGHT)
+        prepare_dual_align_paragraph(
+            p, content_width_twips, suppress_positions=_WORD_CHROME_TAB_STOPS,
+        )
         _render_chrome_segment(p, left, meta)
-        p.add_run().add_tab()
+        add_dual_align_tab(p)
         _render_chrome_segment(p, right, meta)
     else:
         _render_chrome_segment(p, text, meta)

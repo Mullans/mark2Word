@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from mark2word import build, parse_blocks
 from mark2word.slug import slugify
@@ -36,17 +37,126 @@ class MarkdownFeatureTests(unittest.TestCase):
         blocks = parse_blocks("Before\n<!-- pagebreak -->\nAfter\n")
         self.assertEqual(blocks[1]["type"], "pagebreak")
 
+    def test_blockquote_table_layout(self):
+        from mark2word.emit import _blockquote_table_layout
+        from mark2word.theme import border_width_twips, length_to_twips
+
+        content = 10_368
+        style = {
+            "padding": {"left": "0.1in", "right": "0.1in"},
+            "border_left": {"size": "3pt", "color": "D6D6D6"},
+        }
+        indent, width = _blockquote_table_layout(style, content)
+        cell_left = length_to_twips("0.1in")
+        cell_right = length_to_twips("0.1in")
+        border = border_width_twips(style["border_left"])
+        self.assertEqual(indent, cell_left + border)
+        self.assertEqual(width, content - indent + cell_right)
+
+    def test_blockquote_indent_left_reduces_width(self):
+        from mark2word.emit import _blockquote_table_layout
+
+        base_style = {"padding": {"left": "0.1in", "right": "0.1in"}}
+        indent_a, width_a = _blockquote_table_layout(base_style, 9000)
+        indent_b, width_b = _blockquote_table_layout(
+            {**base_style, "indent_left": "12pt"}, 9000,
+        )
+        self.assertGreater(indent_b, indent_a)
+        self.assertLess(width_b, width_a)
+        self.assertEqual(width_a - width_b, indent_b - indent_a)
+
+    def test_fill_none_skips_shading(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "no-fill.docx"
+            build(
+                glob={"code_block": {"fill": "none"}, "code_inline": {"fill": "none"}},
+                external={},
+                md_body="`x`\n```\ny\n```\n",
+                out_path=out,
+            )
+            with zipfile.ZipFile(out) as z:
+                xml = z.read("word/document.xml").decode("utf-8")
+            self.assertNotIn('w:fill="F5F5F5"', xml)
+
+    def test_region_top_level_props_apply_to_body(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "region-body.docx"
+            build(
+                glob={
+                    "$pullquote": {
+                        "font": "Georgia",
+                        "size": 13,
+                        "color": "C00000",
+                        "italic": True,
+                        "body": {"align": "center"},
+                    },
+                },
+                external={},
+                md_body="<!-- region: pullquote -->\nRegion line\n<!-- /region -->\n",
+                out_path=out,
+            )
+            doc = Document(out)
+            para = doc.paragraphs[0]
+            self.assertEqual(para.alignment, WD_ALIGN_PARAGRAPH.CENTER)
+            run = para.runs[0]
+            self.assertEqual(run.font.name, "Georgia")
+            self.assertEqual(run.font.size.pt, 13)
+            self.assertTrue(run.italic)
+            self.assertEqual(str(run.font.color.rgb), "C00000")
+
+    def test_blockquote_space_before_on_preceding_paragraph(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "bq-space.docx"
+            build(
+                glob={"blockquote": {"space_before": 12, "space_after": 0}},
+                external={},
+                md_body="Body line\n\n> quoted\n",
+                out_path=out,
+            )
+            doc = Document(out)
+            body = doc.paragraphs[0]
+            self.assertEqual(body.paragraph_format.space_after.pt, 12)
+            quote_cell = doc.tables[0].rows[0].cells[0].paragraphs[0]
+            self.assertEqual(quote_cell.paragraph_format.space_before.pt, 0)
+
     def test_blockquote_renders_in_docx(self):
         with TemporaryDirectory() as tmp:
             out = Path(tmp) / "bq.docx"
             build(
-                glob={"blockquote": {"indent_left": "18pt", "italic": True}},
+                glob={"blockquote": {"italic": True}},
                 external={},
                 md_body="> A quoted line\n",
                 out_path=out,
             )
-            doc = Document(out)
-            self.assertIn("quoted", doc.paragraphs[0].text.lower())
+            with zipfile.ZipFile(out) as z:
+                xml = z.read("word/document.xml").decode("utf-8")
+            self.assertIn("quoted", xml.lower())
+            self.assertIn("<w:tbl>", xml)
+            self.assertIn('w:fill="F0F0F0"', xml)
+            self.assertIn("<w:tblInd", xml)
+            self.assertIn("<w:tblW", xml)
+
+    def test_inline_code_run_shading(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "inline-code.docx"
+            build(
+                glob={},
+                external={},
+                md_body="Use `inline` here\n",
+                out_path=out,
+            )
+            with zipfile.ZipFile(out) as z:
+                xml = z.read("word/document.xml").decode("utf-8")
+            self.assertIn('w:fill="F5F5F5"', xml)
+            self.assertIn("inline", xml)
+
+    def test_code_block_defaults_to_monospace(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "mono.docx"
+            build(glob={}, external={}, md_body="```\nx\n```\n", out_path=out)
+            with zipfile.ZipFile(out) as z:
+                styles = z.read("word/styles.xml").decode("utf-8")
+            self.assertIn("Consolas", styles)
 
     def test_hr_renders_border(self):
         with TemporaryDirectory() as tmp:
@@ -151,6 +261,21 @@ class MarkdownFeatureTests(unittest.TestCase):
             run = doc.paragraphs[0].runs[0]
             self.assertEqual(str(run.font.color.rgb), "0000FF")
 
+    def test_code_fill_applies_paragraph_shading(self):
+        with TemporaryDirectory() as tmp:
+            out = Path(tmp) / "code-fill.docx"
+            build(
+                glob={},
+                external={},
+                md_body="```\nline one\nline two\n```\n",
+                out_path=out,
+            )
+            with zipfile.ZipFile(out) as z:
+                doc_xml = z.read("word/document.xml").decode("utf-8")
+            self.assertIn('w:fill="F5F5F5"', doc_xml)
+            self.assertIn("Mark2wordCodeBlock", doc_xml)
+            self.assertNotRegex(doc_xml, r"<w:tbl>.*?F5F5F5")
+
     def test_page_header_footer_from_theme(self):
         with TemporaryDirectory() as tmp:
             out = Path(tmp) / "chrome.docx"
@@ -165,8 +290,14 @@ class MarkdownFeatureTests(unittest.TestCase):
             )
             with zipfile.ZipFile(out) as z:
                 footer = z.read("word/footer1.xml").decode("utf-8")
+                styles = z.read("word/styles.xml").decode("utf-8")
             self.assertIn("My Doc", footer)
             self.assertIn("fldChar", footer)
+            self.assertIn('w:val="clear"', footer)
+            self.assertIn('w:val="right"', footer)
+            footer_style = styles[styles.find('w:styleId="Footer"'):]
+            footer_style = footer_style[: footer_style.find("</w:style>")]
+            self.assertNotIn('w:val="center"', footer_style)
 
     def test_slugify(self):
         self.assertEqual(slugify("Hello World!"), "hello-world")

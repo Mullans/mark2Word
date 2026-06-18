@@ -61,12 +61,16 @@ def _validate_merged_theme(theme: dict[str, Any], source: Path) -> None:
         elif isinstance(value, dict):
             _validate_style_dict(value, source, context=key)
 
-    if "code" in theme and isinstance(theme["code"], dict):
-        langs = theme["code"].get("langs")
-        if isinstance(langs, dict):
-            for lang, cfg in langs.items():
-                if isinstance(cfg, dict):
-                    _validate_style_dict(cfg, source, context=f"code.langs.{lang}")
+    for block_key in ("code", "code_block"):
+        block = theme.get(block_key)
+        if isinstance(block, dict):
+            langs = block.get("langs")
+            if isinstance(langs, dict):
+                for lang, cfg in langs.items():
+                    if isinstance(cfg, dict):
+                        _validate_style_dict(
+                            cfg, source, context=f"{block_key}.langs.{lang}",
+                        )
 
 
 def _validate_page_chrome(page: Any) -> None:

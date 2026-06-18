@@ -18,6 +18,11 @@ heading: { bold: true, color: "2B579A" }                # all heading levels
 h1:      { size: 14, color: "000000" }
 h2:      { size: 12, space_before: 12pt, space_after: 4pt, border_bottom: { size: 0.5pt, color: "2B579A" } }
 
+# code umbrella + block / inline variants (see src/mark2word/defaults.yaml for built-ins)
+code:        { font: Consolas, size: 9 }
+code_block:  {}
+code_inline: {}
+
 # define regions using a name prepended with $
 $header:
   align: center

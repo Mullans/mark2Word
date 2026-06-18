@@ -13,27 +13,60 @@ from docx.shared import Inches, Pt, RGBColor
 from mark2word.errors import FrontmatterError, ThemeError
 from mark2word.list_format import resolve_level_numbering, word_lvl_text
 
-DEFAULTS: dict[str, Any] = {
-    "font": "Calibri",
-    "size": 11,
-    "color": "000000",
-    "body": {},
-    "list": {"indent_left": "18pt", "indent_hanging": "18pt"},
-    "heading": {"bold": True},
-    "code": {"font": "Consolas", "size": 9},
-}
+
+def _load_defaults() -> dict[str, Any]:
+    path = Path(__file__).with_name("defaults.yaml")
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ThemeError(f"defaults file must be a YAML mapping: {path}")
+    return data
+
+
+DEFAULTS: dict[str, Any] = _load_defaults()
 
 PROP_KEYS = {
     "font", "size", "color", "bold", "italic", "align", "line",
     "space_before", "space_between", "space_after",
-    "indent_left", "indent_right", "indent_hanging", "indent_first_line", "border_bottom",
-    "fill", "width", "max_width", "alt_mode",
+    "indent_left", "indent_right", "indent_hanging", "indent_first_line",
+    "border_bottom", "border_left", "border_right",
+    "fill", "width", "max_width", "alt_mode", "padding",
 }
+
+
+def fill_enabled(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str) and value.strip().lower() in {"none", "false", ""}:
+        return False
+    return True
+
+
+def border_enabled(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str) and value.strip().lower() in {"none", "false", ""}:
+        return False
+    return isinstance(value, dict)
+
+
+def length_to_twips(value) -> int:
+    if value is None:
+        return 0
+    return int(round(pt_value(value) * 20))
+
+
+def border_width_twips(spec: dict[str, Any]) -> int:
+    """Visual width of a cell border for layout (pt → twips)."""
+    return length_to_twips(spec.get("size", "0.5pt"))
 
 IMAGE_ALT_MODES = {"caption", "doc", "both", "none"}
 
 HEADINGS = {f"h{i}" for i in range(1, 7)}
-TEXT_ELEMENTS = {"body", "list", "ol", "ul", "code", "blockquote", "image", "hr"}
+TEXT_ELEMENTS = {
+    "body", "list", "ol", "ul", "code", "code_block", "code_inline",
+    "blockquote", "image", "hr",
+}
+CODE_ELEMENTS = {"code_block", "code_inline"}
 TABLE_ELEMENTS = {"table", "th", "td"}
 LIST_KINDS = {"list", "ol", "ul"}
 LIST_FORMAT_KEYS = {"format", "num_fmt", "template"}
@@ -240,6 +273,10 @@ def _key_order(element: str) -> list[str]:
         return ["heading", element]
     if element == "ol" or element == "ul":
         return ["list", element]
+    if element == "code_block":
+        return ["code", "code_block"]
+    if element == "code_inline":
+        return ["code", "code_inline"]
     if element in TEXT_ELEMENTS:
         return ["text", element]
     if element == "image":
@@ -389,16 +426,16 @@ class Resolver:
             style.pop(key, None)
         return style
 
-    def resolve_code_style(
+    def resolve_code_block_style(
         self,
         code_lang: str = "",
         region_path: tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
-        style = dict(self.resolve("code", region_path))
+        style = dict(self.resolve("code_block", region_path))
         if not code_lang:
             return style
         for layer in self.global_layers:
-            code_block = layer.get("code")
+            code_block = layer.get("code_block") or layer.get("code")
             if not isinstance(code_block, dict):
                 continue
             langs = code_block.get("langs")
@@ -412,7 +449,7 @@ class Resolver:
                 node = self._descend(src, list(prefix))
                 if not isinstance(node, dict):
                     continue
-                code_block = node.get("code")
+                code_block = node.get("code_block") or node.get("code")
                 if not isinstance(code_block, dict):
                     continue
                 langs = code_block.get("langs")
@@ -421,3 +458,17 @@ class Resolver:
                     if isinstance(sub, dict):
                         style.update({k: v for k, v in sub.items() if k in PROP_KEYS})
         return style
+
+    def resolve_code_inline_style(
+        self,
+        region_path: tuple[str, ...] | None = None,
+    ) -> dict[str, Any]:
+        return dict(self.resolve("code_inline", region_path))
+
+    def resolve_code_style(
+        self,
+        code_lang: str = "",
+        region_path: tuple[str, ...] | None = None,
+    ) -> dict[str, Any]:
+        """Backward-compatible alias for fenced code block styling."""
+        return self.resolve_code_block_style(code_lang, region_path)

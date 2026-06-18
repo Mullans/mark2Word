@@ -19,3 +19,11 @@ list:
 heading:
   bold: true
   color: "2B579A"
+
+blockquote:
+  italic: true
+  color: "404040"
+
+hr:
+  space_before: 10pt
+  space_after: 10pt

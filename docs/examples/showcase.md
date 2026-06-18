@@ -1,18 +1,36 @@
 ---
 extends: showcase-theme.yaml
+title: mark2word Style Gallery
 $pullquote:
   color: "943634"
 ---
 
-<!-- region: header -->
+<!-- region: header-region -->
 # mark2word Style Gallery
-A sample of themed Markdown → Word conversion
+Themed Markdown → polished Word · docs/examples/showcase.md
 <!-- /region -->
+
+## At a Glance
+
+This document is a living catalog of what mark2word can render. Jump to any section:
+
+- [Inline markup](#inline-markup) — emphasis, links, dual-align
+- [Lists](#lists) — nested bullets and numbers
+- [Images & tables](#images-and-tables) — layout and cell styling
+- [Code](#code-blocks) — fenced blocks with language themes
+- [Theme regions](#theme-regions) — local overrides without touching body text
+
+The **page header and footer** on every sheet come from the theme (`page.header` / `page.footer` with `{title}`, `{page}`, and `{pages}`). The centered line at the very end of this file is a **body footer region** — content you control in Markdown, not Word page chrome.
 
 ## Document Purpose
 
-This document demonstrates how mark2word can take a Markdown document with a little extra invisible style and make it a polished Word file. For __human work__, it can be an easy way to separate drafting your documents and polishing the style, letting you focus on each separately before you're ready to compile them together into a Word document. For __working with agents__, Markdown provides a simple yet expressive output format, and keeping the style and text separate lets the agent focus on the content of your document rather than writing another Python script or messing with XML.
-Plus, since the styling only uses the front-matter, YAML, or comments, the Markdown files still render in any viewer.
+mark2word separates *what you write* from *how it looks*. YAML frontmatter, external themes, and invisible HTML comments carry styling; the Markdown body stays readable in GitHub, Obsidian, or any previewer.
+
+> **Why it matters.** Authors draft in plain Markdown. Designers tune one theme file. Agents can regenerate content without rebuilding Word XML by hand — and the same skeleton can become a memo, a proposal, or a report by swapping YAML.
+
+For __human workflows__, that means polish without fighting the Word ribbon. For __agent workflows__, it means structured output that compiles to a client-ready `.docx`.
+
+---
 
 ### Heading Level Three
 
@@ -24,84 +42,124 @@ Plus, since the styling only uses the front-matter, YAML, or comments, the Markd
 
 ## Inline Markup
 
-A plain body paragraph with **bold**, *italic*, ***bold italic***, _underscore italic_, __underscore bold__, and `inline code`. Adding links also works: [mark2word on GitHub](https://github.com/Mullans/mark2Word). You can even use `||` in the middle of a line to split it into left- and right-aligned sides.
+A body paragraph with **bold**, *italic*, ***bold italic***, _underscore italic_, __underscore bold__, and `inline code`. External links work: [**mark2word on GitHub**](https://github.com/Mullans/mark2Word). Internal links jump to bookmarks on headings — try [the lists section](#lists) or [code blocks](#code-blocks).
 
-Left-aligned Text || Right-aligned Text
+Dual-aligned lines split on `||` (ignored inside backticks):
+
+Left-aligned label || Right-aligned value
 
 <!-- region: pullquote -->
-You can even add in custom styling: the same Markdown skeleton can look like a memo, a proposal, or a résumé depending on the YAML you attach.
+The same Markdown skeleton can look like a memo, a proposal, or a résumé — swap the theme, keep the words.
 <!-- /region -->
 
 ## Lists
 
-**Unordered Lists**
+**Unordered lists** use theme `ul` levels (`*`, `o`, `-` at depth):
 
-- Markdown unordered lists
-- work just like you would expect,
-  - and nested bullets inherit list indentation.
-  - Their styling comes from the `list` theme block.
-- Making it easy to use!
+- Top-level bullet
+- second item
+  - nested level one
+    - nested level two
+- back to top level
 
-**Ordered Lists**
+**Ordered lists** use `ol` levels (`1.`, `a.`, `i.`):
 
-1. Markdown ordered lists
-2. also work as expected.
-   1. Nested lists too!
-3. But look what happens if you split the list.
+1. First top-level item
+2. Second item
+   1. Nested ordered (letter format at depth 1 in theme)
+   2. Another nested item
+3. Third top-level item
 
-A body paragraph between lists restarts numbering.
+A body paragraph between lists **restarts numbering** — useful when prose interrupts a sequence.
 
-9. The first number of the list sets the start value for the ordered run,
-10. and the numbering continues within the new run.
+9. This run starts at nine (markdown sets the seed value)
+10. and continues from there
 
-## Images
+## Images and Tables
 
-Markdown embedded images work like this:
-![Color swatch](sample.png)
+Images resolve relative to this file. Alt text can feed Word accessibility and/or a caption (`image.alt_mode` in theme):
 
-## Tables
+![Accent swatch used in headings and table headers](sample.png)
 
-Styled elements reference table:
-
-| Element | What you write | What the theme controls |
+<!-- region: feature-grid -->
+| Feature | Markdown | Theme keys |
 | - | - | - |
-| Headings | `#` through `######` | `heading`, `h1`–`h6`, fonts, color, borders |
-| Body | plain lines | `body`, `text`, spacing, alignment |
-| Lists | `- item` / `1. item` | `list`, indents, `space_between` |
-| Regions | `<!-- region: name -->` | `$name` blocks with nested targets |
-| Tables | pipe tables | `table`, `th`, `td`, `fill` |
-| Code | fenced blocks | `code` font, size, color |
+| Page chrome | *(none — theme only)* | `page.header`, `page.footer`, `{title}` |
+| Headings | `#` … `######` | `heading`, `h1`–`h6`, bookmarks for `#links` |
+| Blockquote | `> quote` | `blockquote`, `indent_left` / `indent_right` |
+| Horizontal rule | `---` on its own line | `hr`, `border_bottom` |
+| Page break | `<!-- pagebreak -->` | *(invisible in MD preview)* |
+| Lists | `-` / `1.` | `list`, `ol`, `ul`, `levels` |
+| Regions | `<!-- region: name -->` | `$name` nested blocks |
+| Tables | pipe syntax | `table`, `th`, `td`, `border`, `padding` |
+| Code | fenced blocks | `code`, `code.langs.{lang}` |
+| Images | `![alt](path)` | `image`, `width`, `max_width`, `alt_mode` |
+<!-- /region -->
 
-## Code Block
+## Code Blocks
 
-The delimiter below is preserved inside fenced code:
+Language tags select optional overrides under `code.langs` in the theme. Pipes inside fences are **not** dual-align markers:
 
 ```python
-# Pipes in code are not dual-alignment markers
-label = "left || right"
-print(label)
+# showcase-theme.yaml → code.langs.python
+def convert(md_path: Path) -> Path:
+    return md_path.with_suffix(".docx")
 ```
 
-## Region/Theme Tips
+```yaml
+# Chained extends in showcase.md → showcase-theme.yaml → showcase-base.yaml
+page:
+  footer: "Style Gallery || Page {page} of {pages}"
+code:
+  langs:
+    yaml: { color: "006666" }
+```
+
+And there can `be inline code sections` too, and page-breaks like this:
+
+<!-- pagebreak -->
+
+## Theme Regions
+
+Regions wrap stretches of Markdown and apply `$region-name` style blocks from the theme or frontmatter. They nest and override globals without inline formatting.
 
 <!-- region: theme-sample -->
 **Theme tips**
 
-- Quote hex colors in the YAML theme - `color: "5B5B5B"`
+- Quote hex colors in YAML — `color: "5B5B5B"`
 - Use `text` for shared body/list defaults
+- Chain `extends` across theme files (see `showcase-base.yaml`)
 <!-- /region -->
+
 <!-- region: theme-sample2 -->
 - Layer `$regions` for local personality
-- Override one margin without losing the rest via frontmatter
+- Override one key without losing the rest of the cascade
+- Validate with `uv run mark2word --check-theme showcase-theme.yaml`
 <!-- /region -->
 
 <!-- region: theme-list-sample -->
-- You can even
-  - have different
-    - styles for
-  - each level
-- of list nesting!
+Per-level list colors in a region:
+
+- level zero
+  - level one
+    - level two
+- back to zero
 <!-- /region -->
-<!-- region: footer -->
+
+## Appendix: Zero-Padded Numbers
+
+<!-- region: appendix -->
+The `$appendix` region sets `ol.levels.0.format: "01."` for formal enumerations:
+
+1. First appendix item
+2. Second appendix item
+3. Third appendix item
+<!-- /region -->
+
+---
+
+*End of gallery body. The line below is a styled region, not the Word page footer (see theme `page.footer`).*
+
+<!-- region: footer-region -->
 mark2word showcase || generated from docs/examples/showcase.md
 <!-- /region -->

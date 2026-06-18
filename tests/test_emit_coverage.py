@@ -1,6 +1,7 @@
 """Docx emission tests for spacing, dual-align, images, and hyperlinks."""
 
 import base64
+import re
 import unittest
 import zipfile
 from pathlib import Path
@@ -74,6 +75,11 @@ class DualAlignTests(unittest.TestCase):
             self.assertIn("Right side", para.text)
             tabs = para._p.findall(f".//{W}tab")
             self.assertTrue(tabs, "expected a tab element between dual-aligned sides")
+            p_pr = para._p.find(f"{W}pPr")
+            self.assertIsNotNone(p_pr)
+            tab_stops = p_pr.findall(f"{W}tabs/{W}tab")
+            self.assertEqual(len(tab_stops), 1)
+            self.assertEqual(tab_stops[0].get(f"{W}val"), "right")
 
 
 class HyperlinkTests(unittest.TestCase):
@@ -109,6 +115,25 @@ class ImageTests(unittest.TestCase):
             )
             doc = Document(out)
             self.assertEqual(len(doc.inline_shapes), 1)
+
+    def test_image_alt_text_in_docx_metadata(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            img = root / "pixel.png"
+            img.write_bytes(MINIMAL_PNG)
+            out = root / "img-alt.docx"
+            build(
+                glob={"image": {"alt_mode": "doc"}},
+                external={},
+                md_body=f"![Swatch description]({img.name})\n",
+                out_path=out,
+                md_path=root / "doc.md",
+            )
+            with zipfile.ZipFile(out) as z:
+                doc_xml = z.read("word/document.xml").decode("utf-8")
+            self.assertIn('descr="Swatch description"', doc_xml)
+            body_text = re.sub(r"<w:drawing>.*?</w:drawing>", "", doc_xml, flags=re.DOTALL)
+            self.assertNotIn("Swatch description", body_text)
 
     def test_missing_image_raises_image_error(self):
         with TemporaryDirectory() as tmp:

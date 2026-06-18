@@ -16,6 +16,8 @@ uv run mark2word --theme-dir docs/examples YOUR_FILE.md
 uv run mark2word --input YOUR_FILE.md --output YOUR_DOC.docx
 # Convert multiple files at once
 uv run mark2word --input FILE1.md --input FILE2.md --output OUT_FOLDER
+# Copy the script into the skill
+uv run sync-skill
 ```
 
 ## Markdown Elements
